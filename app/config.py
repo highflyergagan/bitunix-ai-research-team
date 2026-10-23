@@ -120,6 +120,10 @@ class Settings:
     grok_input_usd_per_mtok: float = 1.25
     grok_output_usd_per_mtok: float = 2.50
     grok_min_confidence: float = 0.6
+    # Study mode (pump/dump research, never trades)
+    study_enabled: bool = True
+    study_min_change: float = 0.30  # +/-30% in 24h
+    study_min_volume: float = 200_000.0
     # App
     dashboard_token: str = field(default="", repr=False)
     data_dir: str = "data"
@@ -167,6 +171,9 @@ class Settings:
         s.grok_input_usd_per_mtok = _f("GROK_INPUT_USD_PER_MTOK", s.grok_input_usd_per_mtok)
         s.grok_output_usd_per_mtok = _f("GROK_OUTPUT_USD_PER_MTOK", s.grok_output_usd_per_mtok)
         s.grok_min_confidence = _f("GROK_MIN_CONFIDENCE", s.grok_min_confidence)
+        s.study_enabled = _b("STUDY_ENABLED", s.study_enabled)
+        s.study_min_change = max(0.05, _f("STUDY_MIN_CHANGE", s.study_min_change))
+        s.study_min_volume = _f("STUDY_MIN_VOLUME", s.study_min_volume)
         s.dashboard_token = os.getenv("DASHBOARD_TOKEN", "")
         s.data_dir = os.getenv("DATA_DIR", s.data_dir)
         return s

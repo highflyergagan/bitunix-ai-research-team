@@ -141,6 +141,12 @@ def create_app(settings: Settings | None = None, client=None, start_scheduler: b
     def scan_now():
         return scanner.scan_once()
 
+    @app.get("/api/study", dependencies=[Depends(auth)])
+    def study(limit: int = 100):
+        if not scanner.study:
+            return {"mode": "disabled"}
+        return scanner.study.summary(min(limit, 500))
+
     @app.post("/api/ai/selftest", dependencies=[Depends(auth)])
     def ai_selftest():
         return scanner.reviewer.selftest()

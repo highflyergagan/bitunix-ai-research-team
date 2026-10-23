@@ -21,6 +21,7 @@ from .paper import PaperBroker
 from .risk import RiskRejected
 from .store import Store, now_ms
 from .strategy import LONG, SHORT, generate_signal
+from .study import StudyMode
 
 log = logging.getLogger("scanner")
 
@@ -33,6 +34,7 @@ class Scanner:
         self.client = client or BitunixPublicClient(pause=settings.request_pause_seconds)
         self.broker = broker or PaperBroker(store, settings, clock)
         self.reviewer = reviewer or ReviewPanel(store, settings, clock)
+        self.study = StudyMode(store, settings.study_min_change, settings.study_min_volume, clock) if settings.study_enabled else None
         self._scan_lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -107,6 +109,12 @@ class Scanner:
         except MarketDataError as exc:
             errors.append(f"tickers: {exc}")
             return self._finish(scan_id, t0, req0, stats, errors, "failed")
+        # study mode (research only, never trades) -- must never break the trading scan
+        if self.study:
+            try:
+                stats["study"] = self.study.update(tick)
+            except Exception as exc:
+                errors.append(f"study mode: {exc}")
         by_sym = {}
         for x in tick:
             try:

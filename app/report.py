@@ -15,6 +15,14 @@ def _iso(ms):
     return dt.datetime.fromtimestamp(ms / 1000, dt.timezone.utc).isoformat(timespec="seconds") if ms else None
 
 
+def _study_brief(store: Store, w) -> dict:
+    try:
+        rows = store.query("SELECT kind, COUNT(*) n FROM study_events WHERE detected_at BETWEEN ? AND ? GROUP BY kind", w)
+    except Exception:
+        return {"enabled": False}
+    return {"note": "research only, no trades", **{r["kind"].lower() + "_events": r["n"] for r in rows}}
+
+
 def start_experiment(store: Store, equity: float, hours: float = 24.0, clock=now_ms) -> dict:
     t = clock()
     exp = {"started_at": t, "planned_end_at": t + int(hours * 3_600_000), "hours": hours, "starting_equity": equity}
@@ -84,6 +92,7 @@ def build_report(store: Store, settings: Settings, clock=now_ms) -> dict:
         "claude": ai_block(ai, settings.claude_model),
         "grok": {**ai_block(gk, settings.grok_model), "mode": settings.grok_mode},
         "ai_total_cost_usd": round(ai["cost"] + gk["cost"], 5),
+        "study_mode": _study_brief(store, w),
         "errors_and_warnings": [{"ts": _iso(e["ts"]), "level": e["level"], "message": e["message"][:400]} for e in errs],
         "limitations": [
             "News, token unlocks, exchange listings and open interest have no verified data source; they are reported as unavailable, not assumed neutral.",
