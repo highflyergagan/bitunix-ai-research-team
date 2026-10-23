@@ -140,6 +140,13 @@ class PanelTests(unittest.TestCase):
         dump = json.dumps(self.store.query("SELECT * FROM ai_decisions") + self.store.query("SELECT * FROM events"))
         self.assertNotIn("SECRET", dump)
 
+    def test_selftest(self):
+        r = self.mk().selftest()
+        self.assertTrue(r["claude"]["ok"] and r["grok"]["ok"])
+        r = self.mk(grok=GrokResp(status=404)).selftest()
+        self.assertFalse(r["grok"]["ok"])
+        self.assertNotIn("SECRET", json.dumps(r))
+
     def test_old_database_is_migrated(self):
         import sqlite3, tempfile, os
         path = os.path.join(tempfile.mkdtemp(), "old.db")

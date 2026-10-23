@@ -69,6 +69,24 @@ class _Reviewer:
         raise NotImplementedError
 
     # --- shared ---
+    def selftest(self) -> dict:
+        """One tiny real API call to confirm the key and model work. Never returns the key."""
+        if self.mode == "off":
+            return {"provider": self.provider, "ok": None, "detail": "disabled"}
+        if not self.api_key:
+            return {"provider": self.provider, "ok": False, "detail": f"{self.key_name} missing"}
+        try:
+            text, inp, outp, model = self._request({"selftest": "Reply with the JSON object "
+                                                    '{"decision":"REJECT","confidence":1,"reasons":["selftest"]}'})
+            cost = inp / 1e6 * self.in_price + outp / 1e6 * self.out_price
+            self.store.log("INFO", f"{self.provider} self-test OK (model {model}, ${cost:.5f})")
+            return {"provider": self.provider, "ok": True, "model": model, "cost_usd": round(cost, 6),
+                    "reply_parsed": bool(re.search(r"\{.*\}", text, re.S))}
+        except Exception as exc:
+            msg = type(exc).__name__ + ": " + str(exc)[:200]
+            self.store.log("ERROR", f"{self.provider} self-test FAILED: {msg}")
+            return {"provider": self.provider, "ok": False, "detail": msg}
+
     def usage_today(self) -> dict:
         t = self.clock()
         day0 = int(dt.datetime.fromtimestamp(t / 1000, dt.timezone.utc)
@@ -203,6 +221,9 @@ class ReviewPanel:
             return {**g, "reasons": [f"Grok: {r}" for r in g["reasons"]]}
         return {**c, "reasons": [f"Claude: {r}" for r in c["reasons"]] + [f"Grok: {r}" for r in g["reasons"]],
                 "cost_usd": c["cost_usd"] + g["cost_usd"]}
+
+    def selftest(self) -> dict:
+        return {"claude": self.claude.selftest(), "grok": self.grok.selftest()}
 
     def status(self) -> dict:
         st = self.claude.status()

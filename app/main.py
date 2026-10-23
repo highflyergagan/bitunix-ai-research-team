@@ -141,6 +141,10 @@ def create_app(settings: Settings | None = None, client=None, start_scheduler: b
     def scan_now():
         return scanner.scan_once()
 
+    @app.post("/api/ai/selftest", dependencies=[Depends(auth)])
+    def ai_selftest():
+        return scanner.reviewer.selftest()
+
     @app.post("/api/experiment/start", dependencies=[Depends(auth)])
     def experiment_start(hours: float = 24.0):
         exp = start_experiment(store, scanner.broker.account()["equity"], max(0.1, min(hours, 168)))
