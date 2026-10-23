@@ -34,6 +34,21 @@ SYSTEM = (
 )
 
 
+def api_error(name: str, r) -> RuntimeError:
+    """Readable provider error (type + message). Provider error bodies never contain the API key."""
+    detail = ""
+    try:
+        j = r.json()
+        e = j.get("error", j)
+        if isinstance(e, dict):
+            detail = f"{e.get('type') or e.get('code') or ''}: {e.get('message') or ''}".strip(": ")
+        else:
+            detail = str(e)
+    except Exception:
+        detail = (getattr(r, "text", "") or "")[:200]
+    return RuntimeError(f"{name} API HTTP {r.status_code}" + (f" -- {detail[:240]}" if detail else ""))
+
+
 def build_payload(signal: dict, account: dict, s: Settings) -> dict:
     return {
         "symbol": signal["symbol"], "proposed_bias": signal["bias"], "entry": signal["entry"],
@@ -83,7 +98,7 @@ class _Reviewer:
             return {"provider": self.provider, "ok": True, "model": model, "cost_usd": round(cost, 6),
                     "reply_parsed": bool(re.search(r"\{.*\}", text, re.S))}
         except Exception as exc:
-            msg = type(exc).__name__ + ": " + str(exc)[:200]
+            msg = type(exc).__name__ + ": " + str(exc)[:320]
             self.store.log("ERROR", f"{self.provider} self-test FAILED: {msg}")
             return {"provider": self.provider, "ok": False, "detail": msg}
 
@@ -147,7 +162,7 @@ class _Reviewer:
                 decision = "REJECT"
             return self._record(signal, signal_id, decision, conf, reasons, model, inp, outp, cost)
         except Exception as exc:  # conservative: any failure rejects
-            msg = type(exc).__name__ + ": " + str(exc)[:200]
+            msg = type(exc).__name__ + ": " + str(exc)[:320]
             self.store.log("WARN", f"{name} review failed for {signal['symbol']}: {msg}")
             return self._record(signal, signal_id, "REJECT", None, [f"{name} review error -> conservative reject"],
                                 model, inp, outp, cost, error=msg)
@@ -170,7 +185,7 @@ class ClaudeReviewer(_Reviewer):
         headers = {"x-api-key": self.api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
         r = self._post(ANTHROPIC_URL, headers=headers, json=body, timeout=self.s.claude_timeout_seconds)
         if r.status_code != 200:
-            raise RuntimeError(f"Claude API HTTP {r.status_code}")
+            raise api_error("Claude", r)
         j = r.json()
         usage = j.get("usage", {})
         text = "".join(b.get("text", "") for b in j.get("content", []) if b.get("type") == "text")
@@ -197,7 +212,7 @@ class GrokReviewer(_Reviewer):
         headers = {"Authorization": "Bearer " + self.api_key, "content-type": "application/json"}
         r = self._post(XAI_URL, headers=headers, json=body, timeout=self.s.claude_timeout_seconds)
         if r.status_code != 200:
-            raise RuntimeError(f"Grok API HTTP {r.status_code}")
+            raise api_error("Grok", r)
         j = r.json()
         usage = j.get("usage", {})
         choices = j.get("choices") or [{}]

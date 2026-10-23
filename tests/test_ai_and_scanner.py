@@ -47,6 +47,16 @@ class ReviewerTests(unittest.TestCase):
         r = ClaudeReviewer(Store(s.db_path), s, Clock()).review(SIG, ACCT)
         self.assertEqual(r["decision"], "REJECT")
 
+    def test_http_error_message_recorded(self):
+        class Bad(FakeResp):
+            def json(self):
+                return {"type": "error", "error": {"type": "invalid_request_error",
+                                                   "message": "Your credit balance is too low"}}
+        r = self.mk(Bad(status=400)).review(SIG, ACCT)
+        self.assertEqual(r["decision"], "REJECT")
+        self.assertIn("credit balance is too low", r["error"])
+        self.assertNotIn("SECRET", r["error"])
+
     def test_http_error_rejects(self):
         self.assertEqual(self.mk(FakeResp(status=529)).review(SIG, ACCT)["decision"], "REJECT")
 
