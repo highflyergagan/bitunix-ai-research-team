@@ -3,10 +3,16 @@ services:
     build: .
     env_file: .env
     ports:
-      - "127.0.0.1:8765:8765"
+      - "127.0.0.1:8765:8765"   # loopback only -- reach it through an SSH tunnel or Tailscale
+    volumes:
+      - paper-data:/app/data     # SQLite account state survives restarts/rebuilds
+    tmpfs:
+      - /tmp
     restart: unless-stopped
     read_only: true
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
+volumes:
+  paper-data:

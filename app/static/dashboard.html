@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Paper Desk</title>
+<style>
+:root{--bg:#0b111b;--panel:#121b29;--line:#22314a;--text:#e6edf7;--muted:#8fa3bf;--up:#2fbf71;--down:#ef5a5a;--warn:#e7b04a;--accent:#5aa2ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{position:sticky;top:0;z-index:2;background:rgba(11,17,27,.94);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+h1{font-size:17px;margin:0;flex:1;min-width:160px}
+.badge{font-size:11px;font-weight:700;letter-spacing:.06em;padding:3px 8px;border-radius:99px;background:#3a2a0a;color:var(--warn);border:1px solid #6b4f14}
+main{max-width:1100px;margin:auto;padding:14px 16px 60px;display:grid;gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:0 0 10px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.kpi{background:#0e1622;border:1px solid var(--line);border-radius:10px;padding:10px}
+.kpi .l{font-size:12px;color:var(--muted)} .kpi .v{font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
+.up{color:var(--up)} .down{color:var(--down)} .muted{color:var(--muted)} .warn{color:var(--warn)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button,input{font:inherit;border-radius:8px;border:1px solid var(--line);background:#0e1622;color:var(--text);padding:9px 12px}
+button{cursor:pointer;background:#17263c} button:hover{border-color:var(--accent)}
+button.primary{background:#1d4ed8;border-color:#1d4ed8} button.danger{background:#5b1d1d;border-color:#7a2a2a}
+input{flex:1;min-width:180px}
+.tbl{overflow-x:auto} table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);white-space:nowrap} th{color:var(--muted);font-weight:600}
+td.wrap{white-space:normal;min-width:220px}
+.pill{display:inline-block;padding:1px 7px;border-radius:99px;font-size:12px;font-weight:600}
+.pill.L{background:#103b25;color:var(--up)} .pill.S{background:#431a1a;color:var(--down)} .pill.N{background:#1c2638;color:var(--muted)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--muted)} .dot.on{background:var(--up)}
+.grid2{display:grid;gap:14px;grid-template-columns:1fr} @media(min-width:860px){.grid2{grid-template-columns:1fr 1fr}}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0e1622;padding:12px;border-radius:8px;max-height:420px;overflow:auto;font-size:12px}
+svg{width:100%;height:90px;display:block}
+#login{max-width:520px;margin:40px auto}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<header><h1>Bitunix AI Paper Desk</h1><span class="badge">PAPER TRADING ONLY</span><span id="clock" class="muted"></span></header>
+
+<main id="login" class="hidden">
+  <div class="card">
+    <h2>Sign in</h2>
+    <p class="muted">Enter the DASHBOARD_TOKEN from your server's .env. It is kept only in this browser tab.</p>
+    <div class="row"><input id="token" type="password" placeholder="Dashboard token" autocomplete="current-password"><button class="primary" onclick="login()">Open</button></div>
+    <p id="loginErr" class="down"></p>
+  </div>
+</main>
+
+<main id="app" class="hidden">
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <div><span id="autoDot" class="dot"></span><b id="autoText">—</b> <span class="muted" id="scanInfo"></span></div>
+      <div class="row">
+        <button class="primary" onclick="post('automation/start')">Start</button>
+        <button onclick="post('automation/stop')">Stop</button>
+        <button onclick="post('scan-now')">Scan now</button>
+        <button onclick="startExperiment()">Start 24h test</button>
+        <button onclick="showReport()">Report</button>
+        <button onclick="logout()">Sign out</button>
+      </div>
+    </div>
+    <div id="halted" class="warn" style="margin-top:8px"></div>
+  </section>
+
+  <section class="card">
+    <h2>Virtual account (USDT)</h2>
+    <div class="kpis" id="kpis"></div>
+    <svg id="spark" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="Equity curve"></svg>
+  </section>
+
+  <section class="card"><h2>Open paper positions</h2><div class="tbl" id="open"></div></section>
+
+  <div class="grid2">
+    <section class="card"><h2>Live signals (latest scan)</h2><div class="tbl" id="signals"></div></section>
+    <section class="card"><h2>Claude AI decisions</h2><div id="aiUsage" class="muted" style="margin-bottom:6px"></div><div class="tbl" id="ai"></div></section>
+  </div>
+
+  <section class="card"><h2>Closed paper trades</h2><div class="tbl" id="closed"></div></section>
+
+  <div class="grid2">
+    <section class="card"><h2>Risk controls</h2><div class="tbl" id="risk"></div></section>
+    <section class="card"><h2>Recent scans</h2><div class="tbl" id="scans"></div></section>
+  </div>
+
+  <section class="card"><h2>Event log</h2><div class="tbl" id="events"></div></section>
+  <section class="card hidden" id="reportCard"><h2>Experiment report</h2><pre id="report"></pre></section>
+  <p class="muted" style="font-size:12px">Simulated results only. No real orders are placed. Signals are research hypotheses, not predictions or financial advice.</p>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let TOKEN = '';
+try { TOKEN = sessionStorage.getItem('desk_token') || ''; } catch (e) {}
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = (v, d=2) => v == null ? '—' : Number(v).toLocaleString(undefined, {maximumFractionDigits:d, minimumFractionDigits:Math.min(d,2)});
+const px = v => v == null ? '—' : (Math.abs(v) >= 100 ? num(v, 2) : Math.abs(v) >= 1 ? num(v, 4) : Number(v).toPrecision(5));
+const cls = v => v > 0 ? 'up' : v < 0 ? 'down' : '';
+const t = ms => ms ? new Date(ms).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : '—';
+const pill = b => { const k = /LONG/.test(b) ? 'L' : /SHORT/.test(b) ? 'S' : 'N'; return `<span class="pill ${k}">${esc(b)}</span>`; };
+const table = (cols, rows) => rows.length ? `<table><tr>${cols.map(c => `<th>${c[0]}</th>`).join('')}</tr>${rows.map(r => `<tr>${cols.map(c => `<td${c[2] ? ' class="wrap"' : ''}>${c[1](r)}</td>`).join('')}</tr>`).join('')}</table>` : '<p class="muted">Nothing yet.</p>';
+
+async function api(path, opts={}) {
+  const r = await fetch('/api/' + path, {...opts, headers: {'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json'}});
+  if (r.status === 401 || r.status === 503 && path === 'status') { const j = await r.json().catch(() => ({})); throw new Error(j.detail || 'Unauthorized'); }
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+  return r.json();
+}
+async function login() {
+  TOKEN = $('token').value.trim();
+  try { await api('status'); try { sessionStorage.setItem('desk_token', TOKEN); } catch (e) {} show(true); refresh(); }
+  catch (e) { $('loginErr').textContent = e.message; }
+}
+function logout() { TOKEN = ''; try { sessionStorage.removeItem('desk_token'); } catch (e) {} show(false); }
+function show(on) { $('app').classList.toggle('hidden', !on); $('login').classList.toggle('hidden', on); }
+async function post(path) { try { await api(path, {method: 'POST'}); } catch (e) { alertBox(e.message); } refresh(); }
+function alertBox(m) { $('halted').textContent = m; }
+async function startExperiment() {
+  if (!confirm('Start a 24-hour paper-trading test now? (Automation will start.)')) return;
+  await post('experiment/start?hours=24');
+}
+async function showReport() {
+  $('reportCard').classList.remove('hidden');
+  $('report').textContent = 'Loading…';
+  try { $('report').textContent = JSON.stringify(await api('report'), null, 2); } catch (e) { $('report').textContent = e.message; }
+  $('reportCard').scrollIntoView({behavior: 'smooth'});
+}
+
+function spark(points) {
+  const svg = $('spark');
+  if (points.length < 2) { svg.innerHTML = ''; return; }
+  const ys = points.map(p => p.equity), lo = Math.min(...ys), hi = Math.max(...ys), span = (hi - lo) || 1;
+  const d = points.map((p, i) => `${(i / (points.length - 1) * 300).toFixed(1)},${(85 - (p.equity - lo) / span * 80).toFixed(1)}`).join(' ');
+  const col = ys[ys.length - 1] >= ys[0] ? 'var(--up)' : 'var(--down)';
+  svg.innerHTML = `<polyline fill="none" stroke="${col}" stroke-width="1.6" vector-effect="non-scaling-stroke" points="${d}"/>`;
+}
+
+async function refresh() {
+  if (!TOKEN) return;
+  let st;
+  try { st = await api('status'); } catch (e) { logout(); $('loginErr').textContent = e.message; return; }
+  const [pos, sig, ai, sc, ev, eq] = await Promise.all([api('positions'), api('signals?limit=80'), api('ai-decisions?limit=30'), api('scans?limit=12'), api('events?limit=40'), api('equity?limit=600')].map(p => p.catch(() => null)));
+  const a = st.account;
+  $('autoDot').classList.toggle('on', st.automation_running);
+  $('autoText').textContent = st.automation_running ? 'Automation running' : 'Automation stopped';
+  $('scanInfo').textContent = ` · last successful scan ${t(st.last_successful_scan)} · next ${st.next_scan_at ? t(st.next_scan_at) : '—'} · ${st.total_scans} scans` + (st.experiment ? ` · 24h test since ${t(st.experiment.started_at)}` : '');
+  $('halted').textContent = a.halted ? '⚠ ' + a.halted : '';
+  const k = [['Equity', num(a.equity, 4), cls(a.equity - a.starting_balance)], ['Balance', num(a.balance, 4), ''], ['Unrealized P&L', num(a.unrealized_pnl, 4), cls(a.unrealized_pnl)],
+    ['Realized P&L', num(a.realized_pnl, 4), cls(a.realized_pnl)], ['Return', num(a.total_return_pct, 2) + '%', cls(a.total_return_pct)], ['Win rate', a.win_rate_pct == null ? '—' : a.win_rate_pct + '%', ''],
+    ['Trades W/L', `${a.wins}/${a.losses}`, ''], ['Drawdown', num(a.drawdown_pct, 2) + '%', a.drawdown_pct > 0 ? 'down' : ''], ['Today P&L', num(a.day_pnl, 4), cls(a.day_pnl)],
+    ['Daily loss limit', num(st.account.day_start_equity * st.risk.max_daily_loss_pct / 100, 2), 'muted']];
+  $('kpis').innerHTML = k.map(([l, v, c]) => `<div class="kpi"><div class="l">${l}</div><div class="v ${c}">${v}</div></div>`).join('');
+  if (eq) spark(eq.equity);
+  if (pos) {
+    $('open').innerHTML = table([['Symbol', r => esc(r.symbol)], ['Side', r => pill(r.side)], ['Qty', r => num(r.qty, 6)], ['Entry', r => px(r.entry_price)], ['Mark', r => px(r.mark_price)],
+      ['Stop', r => px(r.stop_loss)], ['Target', r => px(r.take_profit)], ['Risk $', r => num(r.risk_usd, 3)], ['Opened', r => t(r.opened_at)]], pos.open);
+    $('closed').innerHTML = table([['Symbol', r => esc(r.symbol)], ['Side', r => pill(r.side)], ['Entry', r => px(r.entry_price)], ['Exit', r => px(r.exit_price)],
+      ['Net P&L', r => `<span class="${cls(r.net_pnl)}">${num(r.net_pnl, 4)}</span>`], ['Fees', r => num(r.entry_fee + r.exit_fee, 4)], ['Reason', r => esc(r.exit_reason)], ['Closed', r => t(r.closed_at)]], pos.closed);
+  }
+  if (sig) {
+    const latest = sig.signals.length ? sig.signals[0].scan_id : null;
+    const rows = sig.signals.filter(s => s.scan_id === latest).sort((x, y) => (y.bias !== 'NO TRADE') - (x.bias !== 'NO TRADE') || y.score - x.score);
+    $('signals').innerHTML = table([['Symbol', r => esc(r.symbol)], ['Bias', r => pill(r.bias)], ['Price', r => px(r.payload.indicators.price)], ['RSI', r => num(r.payload.indicators.rsi_15m, 1)],
+      ['Why', r => esc((r.payload.blockers.length ? r.payload.blockers : r.payload.reasons).slice(0, 3).join('; ')), 1]], rows);
+  }
+  if (ai) {
+    const u = ai.usage;
+    $('aiUsage').textContent = `${u.model} · mode ${u.mode}${u.configured ? '' : ' (no API key)'} · today ${u.calls_today}/${u.max_calls_per_day} calls, $${num(u.cost_today_usd, 4)} of $${num(u.max_daily_usd, 2)} · all-time $${num(u.total_cost_usd, 4)}`;
+    $('ai').innerHTML = table([['Time', r => t(r.ts)], ['Symbol', r => esc(r.symbol)], ['Decision', r => `<span class="${r.decision === 'APPROVE' ? 'up' : 'down'}">${esc(r.decision)}</span>`],
+      ['Conf.', r => r.confidence == null ? '—' : num(r.confidence, 2)], ['Reasons', r => esc(r.reasons.join('; ')), 1]], ai.decisions);
+  }
+  const R = st.risk;
+  $('risk').innerHTML = table([['Control', r => r[0]], ['Setting', r => r[1]]], [['Risk per trade', R.risk_per_trade_pct + '% of equity'], ['Max daily loss', R.max_daily_loss_pct + '% of day-start equity'],
+    ['Max drawdown (kill switch)', R.max_drawdown_pct + '% from peak'], ['Max open positions', R.max_open_positions], ['Max leverage (notional cap)', R.max_leverage + 'x'], ['Max trades / day', R.max_trades_per_day],
+    ['Fees / slippage per fill', `${R.taker_fee_pct}% / ${R.slippage_pct}%+`], ['Min reward:risk after costs', R.min_reward_risk_after_costs], ['Time stop', R.max_hold_hours + 'h'], ['Real-money trading', '<b class="down">DISABLED</b>']]);
+  if (sc) $('scans').innerHTML = table([['Started', r => t(r.started_at)], ['Status', r => `<span class="${r.status === 'ok' ? 'up' : r.status === 'running' ? 'muted' : 'warn'}">${esc(r.status)}</span>`], ['Symbols', r => r.symbols_scanned],
+    ['Signals', r => r.signals], ['Opened', r => r.opened], ['Closed', r => r.closed]], sc.scans);
+  if (ev) $('events').innerHTML = table([['Time', r => t(r.ts)], ['Level', r => `<span class="${r.level === 'ERROR' ? 'down' : r.level === 'WARN' ? 'warn' : r.level === 'TRADE' ? 'up' : 'muted'}">${esc(r.level)}</span>`], ['Message', r => esc(r.message), 1]], ev.events);
+}
+setInterval(() => { $('clock').textContent = new Date().toLocaleTimeString(); }, 1000);
+setInterval(refresh, 30000);
+$('token').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+if (TOKEN) { show(true); refresh(); } else { show(false); }
+</script>
+</body>
+</html>
