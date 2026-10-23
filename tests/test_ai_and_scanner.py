@@ -48,6 +48,43 @@ class ReviewerTests(unittest.TestCase):
         r = ClaudeReviewer(Store(s.db_path), s, Clock()).review(SIG, ACCT)
         self.assertEqual(r["decision"], "REJECT")
 
+    def test_claude_forced_tool_output_parsed(self):
+        class ToolResp(FakeResp):
+            def json(self):
+                return {"model": "claude-haiku-5-5", "usage": {"input_tokens": 900, "output_tokens": 80},
+                        "content": [{"type": "text", "text": "Let me think about this setup in prose..."},
+                                    {"type": "tool_use", "name": "submit_review",
+                                     "input": {"decision": "APPROVE", "confidence": 0.7, "reasons": ["trend ok"]}}]}
+        rv = self.mk(ToolResp())
+        r = rv.review(SIG, ACCT)
+        self.assertEqual(r["decision"], "APPROVE")
+        body = self.calls[0][2]
+        self.assertEqual(body["tool_choice"], {"type": "tool", "name": "submit_review"})
+        self.assertGreaterEqual(body["max_tokens"], 600)
+
+    def test_failed_calls_do_not_use_call_cap(self):
+        rv = self.mk(FakeResp(text="prose only, no json"), claude_max_calls_per_day=2)
+        for _ in range(3):
+            rv.review(SIG, ACCT)
+        self.assertEqual(len(self.calls), 3)  # errors cost money ($ cap) but don't burn the call cap
+        self.assertEqual(rv.usage_today()["calls"], 0)
+
+    def test_same_rejected_setup_not_reasked_within_hour(self):
+        rv = self.mk(FakeResp(text='{"decision":"REJECT","confidence":0.9,"reasons":["weak"]}'))
+        clock = rv.clock
+        sid = self.store.execute("INSERT INTO signals(ts,symbol,bias,payload) VALUES(?,?,?,?)",
+                                 (clock(), "BTCUSDT", "LONG BIAS", "{}")).lastrowid
+        rv.review(SIG, ACCT, sid)
+        sid2 = self.store.execute("INSERT INTO signals(ts,symbol,bias,payload) VALUES(?,?,?,?)",
+                                  (clock(), "BTCUSDT", "LONG BIAS", "{}")).lastrowid
+        r = rv.review(SIG, ACCT, sid2)
+        self.assertEqual(r["decision"], "REJECT")
+        self.assertIn("already rejected", r["reasons"][0])
+        self.assertEqual(len(self.calls), 1)
+        clock.t += 61 * 60_000
+        rv.review(SIG, ACCT, sid2)
+        self.assertEqual(len(self.calls), 2)
+
     def test_http_error_message_recorded(self):
         class Bad(FakeResp):
             def json(self):
@@ -112,6 +149,16 @@ class PanelTests(unittest.TestCase):
                 return grok or GrokResp()
             return claude or FakeResp()
         return ReviewPanel(self.store, s, Clock(), post)
+
+    def test_grok_uses_json_mode(self):
+        bodies = []
+        s = settings(ai_mode="required", anthropic_api_key="k", xai_api_key="x", grok_mode="required")
+        def post(url, headers, json, timeout):
+            bodies.append((url, json))
+            return GrokResp() if "x.ai" in url else FakeResp()
+        ReviewPanel(Store(s.db_path), s, Clock(), post).review(SIG, ACCT)
+        grok_body = next(b for u, b in bodies if "x.ai" in u)
+        self.assertEqual(grok_body["response_format"], {"type": "json_object"})
 
     def test_both_approve(self):
         r = self.mk().review(SIG, ACCT)

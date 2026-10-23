@@ -34,6 +34,22 @@ SYSTEM = (
 )
 
 
+REVIEW_TOOL = {
+    "name": "submit_review",
+    "description": "Submit the review decision for this paper-trade candidate.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "decision": {"type": "string", "enum": ["APPROVE", "REJECT"]},
+            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+            "reasons": {"type": "array", "items": {"type": "string"}, "maxItems": 6},
+        },
+        "required": ["decision", "confidence", "reasons"],
+    },
+}
+REVIEW_CACHE_MINUTES = 60
+
+
 def api_error(name: str, r) -> RuntimeError:
     """Readable provider error (type + message). Provider error bodies never contain the API key."""
     detail = ""
@@ -106,10 +122,11 @@ class _Reviewer:
         t = self.clock()
         day0 = int(dt.datetime.fromtimestamp(t / 1000, dt.timezone.utc)
                    .replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+        # calls = successful API reviews (the call cap); cost = everything billed, including failed calls ($ cap)
         r = self.store.one(
-            "SELECT COUNT(*) calls, COALESCE(SUM(cost_usd),0) cost FROM ai_decisions "
+            "SELECT SUM(error IS NULL) calls, COALESCE(SUM(cost_usd),0) cost FROM ai_decisions "
             "WHERE ts>=? AND model IS NOT NULL AND provider=?", (day0, self.provider))
-        return {"calls": r["calls"], "cost_usd": r["cost"]}
+        return {"calls": r["calls"] or 0, "cost_usd": r["cost"]}
 
     def status(self) -> dict:
         u = self.usage_today()
@@ -140,6 +157,16 @@ class _Reviewer:
             if self.mode == "optional":
                 return self._record(signal, signal_id, "APPROVE", None, [f"no {self.key_name}; {name} optional -> skipped"])
             return self._record(signal, signal_id, "REJECT", None, [f"{self.key_name} not configured ({name} required)"])
+        prev = self.store.one(
+            "SELECT a.ts, a.decision, a.confidence FROM ai_decisions a JOIN signals s ON s.id=a.signal_id "
+            "WHERE a.provider=? AND a.symbol=? AND s.bias=? AND a.model IS NOT NULL AND a.error IS NULL AND a.ts>=? "
+            "ORDER BY a.ts DESC LIMIT 1",
+            (self.provider, signal["symbol"], signal["bias"], self.clock() - REVIEW_CACHE_MINUTES * 60_000))
+        if prev and prev["decision"] == "REJECT":
+            when = dt.datetime.fromtimestamp(prev["ts"] / 1000).strftime("%H:%M")
+            return self._record(signal, signal_id, "REJECT", prev["confidence"],
+                                [f"same {signal['bias']} setup already rejected by {name} at {when}; not re-asking for "
+                                 f"{REVIEW_CACHE_MINUTES} min"])
         u = self.usage_today()
         if u["calls"] >= self.max_calls or u["cost_usd"] >= self.max_usd:
             return self._record(signal, signal_id, "REJECT", None,
@@ -181,7 +208,9 @@ class ClaudeReviewer(_Reviewer):
 
     def _request(self, payload):
         # No `temperature`: current Claude models reject it ("temperature is deprecated for this model").
-        body = {"model": self.model, "max_tokens": 300, "system": SYSTEM,
+        # A forced tool call guarantees a structured answer instead of free prose that may contain no JSON.
+        body = {"model": self.model, "max_tokens": 600, "system": SYSTEM,
+                "tools": [REVIEW_TOOL], "tool_choice": {"type": "tool", "name": REVIEW_TOOL["name"]},
                 "messages": [{"role": "user", "content": "Review this paper-trade candidate:\n" + json.dumps(payload)}]}
         headers = {"x-api-key": self.api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
         r = self._post(ANTHROPIC_URL, headers=headers, json=body, timeout=self.s.claude_timeout_seconds)
@@ -189,7 +218,10 @@ class ClaudeReviewer(_Reviewer):
             raise api_error("Claude", r)
         j = r.json()
         usage = j.get("usage", {})
-        text = "".join(b.get("text", "") for b in j.get("content", []) if b.get("type") == "text")
+        blocks = j.get("content", [])
+        tool = next((b for b in blocks if b.get("type") == "tool_use"), None)
+        text = json.dumps(tool.get("input", {})) if tool else "".join(
+            b.get("text", "") for b in blocks if b.get("type") == "text")
         return text, int(usage.get("input_tokens", 0)), int(usage.get("output_tokens", 0)), j.get("model", self.model)
 
 
@@ -207,7 +239,8 @@ class GrokReviewer(_Reviewer):
         self.in_price, self.out_price = s.grok_input_usd_per_mtok, s.grok_output_usd_per_mtok
 
     def _request(self, payload):
-        body = {"model": self.model, "max_tokens": 300, "temperature": 0,
+        body = {"model": self.model, "max_tokens": 600, "temperature": 0,
+                "response_format": {"type": "json_object"},
                 "messages": [{"role": "system", "content": SYSTEM},
                              {"role": "user", "content": "Review this paper-trade candidate:\n" + json.dumps(payload)}]}
         headers = {"Authorization": "Bearer " + self.api_key, "content-type": "application/json"}
