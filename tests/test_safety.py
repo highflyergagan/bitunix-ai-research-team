@@ -68,6 +68,7 @@ class SafetyTests(unittest.TestCase):
         s = Settings()
         s.anthropic_api_key = "sk-ant-SECRET"
         s.dashboard_token = "TOKENSECRET"
+        s.xai_api_key = "xai-SECRET"
         self.assertNotIn("SECRET", repr(s))
 
 

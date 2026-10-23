@@ -111,6 +111,15 @@ class Settings:
     claude_output_usd_per_mtok: float = 0.50
     claude_min_confidence: float = 0.6
     claude_timeout_seconds: float = 30.0
+    # Grok (xAI) -- optional second reviewer, called only after Claude approves
+    xai_api_key: str = field(default="", repr=False)
+    grok_mode: str = "auto"  # auto (required if XAI_API_KEY set, else off) | required | optional | off
+    grok_model: str = "grok-4.3"
+    grok_max_calls_per_day: int = 40
+    grok_max_daily_usd: float = 0.50
+    grok_input_usd_per_mtok: float = 1.25
+    grok_output_usd_per_mtok: float = 2.50
+    grok_min_confidence: float = 0.6
     # App
     dashboard_token: str = field(default="", repr=False)
     data_dir: str = "data"
@@ -147,6 +156,17 @@ class Settings:
         s.claude_input_usd_per_mtok = _f("CLAUDE_INPUT_USD_PER_MTOK", s.claude_input_usd_per_mtok)
         s.claude_output_usd_per_mtok = _f("CLAUDE_OUTPUT_USD_PER_MTOK", s.claude_output_usd_per_mtok)
         s.claude_min_confidence = _f("CLAUDE_MIN_CONFIDENCE", s.claude_min_confidence)
+        s.xai_api_key = os.getenv("XAI_API_KEY", "")
+        gm = os.getenv("GROK_MODE", s.grok_mode).strip().lower()
+        if gm not in ("auto", "required", "optional", "off"):
+            gm = "auto"
+        s.grok_mode = ("required" if s.xai_api_key else "off") if gm == "auto" else gm
+        s.grok_model = os.getenv("GROK_MODEL", s.grok_model)
+        s.grok_max_calls_per_day = _i("GROK_MAX_CALLS_PER_DAY", s.grok_max_calls_per_day)
+        s.grok_max_daily_usd = _f("GROK_MAX_DAILY_USD", s.grok_max_daily_usd)
+        s.grok_input_usd_per_mtok = _f("GROK_INPUT_USD_PER_MTOK", s.grok_input_usd_per_mtok)
+        s.grok_output_usd_per_mtok = _f("GROK_OUTPUT_USD_PER_MTOK", s.grok_output_usd_per_mtok)
+        s.grok_min_confidence = _f("GROK_MIN_CONFIDENCE", s.grok_min_confidence)
         s.dashboard_token = os.getenv("DASHBOARD_TOKEN", "")
         s.data_dir = os.getenv("DATA_DIR", s.data_dir)
         return s

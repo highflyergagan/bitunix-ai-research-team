@@ -3,7 +3,7 @@ import json
 import threading
 import unittest
 
-from app.ai_review import ClaudeReviewer
+from app.ai_review import ClaudeReviewer, GrokReviewer, ReviewPanel
 from app.scanner import Scanner
 from app.store import Store
 from tests.helpers import M1, Clock, FakeClient, settings
@@ -73,6 +73,84 @@ class ReviewerTests(unittest.TestCase):
         rv.review(SIG, ACCT)
         dump = json.dumps(self.store.query("SELECT * FROM ai_decisions") + self.store.query("SELECT * FROM events"))
         self.assertNotIn("SECRET", dump)
+
+
+class GrokResp:
+    def __init__(self, status=200, text='{"decision":"APPROVE","confidence":0.75,"reasons":["fine"]}'):
+        self.status_code = status
+        self._j = {"model": "grok-4.3", "choices": [{"message": {"role": "assistant", "content": text}}],
+                   "usage": {"prompt_tokens": 900, "completion_tokens": 70}}
+
+    def json(self):
+        return self._j
+
+
+class PanelTests(unittest.TestCase):
+    def mk(self, claude=None, grok=None, grok_exc=None, **kw):
+        cfg = dict(ai_mode="required", anthropic_api_key="sk-ant-SECRET", xai_api_key="xai-SECRET", grok_mode="required")
+        cfg.update(kw)
+        s = settings(**cfg)
+        self.store = Store(s.db_path)
+        self.urls = []
+
+        def post(url, headers, json, timeout):
+            self.urls.append(url)
+            if "x.ai" in url:
+                if grok_exc:
+                    raise grok_exc
+                return grok or GrokResp()
+            return claude or FakeResp()
+        return ReviewPanel(self.store, s, Clock(), post)
+
+    def test_both_approve(self):
+        r = self.mk().review(SIG, ACCT)
+        self.assertEqual(r["decision"], "APPROVE")
+        self.assertEqual(len(self.urls), 2)
+        self.assertAlmostEqual(r["cost_usd"], (800 * 0.10 + 60 * 0.50 + 900 * 1.25 + 70 * 2.50) / 1e6)
+
+    def test_grok_reject_blocks(self):
+        r = self.mk(grok=GrokResp(text='{"decision":"REJECT","confidence":0.8,"reasons":["weak"]}')).review(SIG, ACCT)
+        self.assertEqual(r["decision"], "REJECT")
+        self.assertTrue(r["reasons"][0].startswith("Grok:"))
+
+    def test_grok_not_called_when_claude_rejects(self):
+        self.mk(claude=FakeResp(text='{"decision":"REJECT","confidence":0.9,"reasons":["no"]}')).review(SIG, ACCT)
+        self.assertEqual(len(self.urls), 1)
+        self.assertNotIn("x.ai", self.urls[0])
+
+    def test_grok_error_rejects(self):
+        self.assertEqual(self.mk(grok_exc=TimeoutError("slow")).review(SIG, ACCT)["decision"], "REJECT")
+
+    def test_grok_required_without_key_rejects(self):
+        self.assertEqual(self.mk(xai_api_key="").review(SIG, ACCT)["decision"], "REJECT")
+
+    def test_grok_auto_without_key_is_off(self):
+        r = self.mk(xai_api_key="", grok_mode="auto").review(SIG, ACCT)
+        self.assertEqual(r["decision"], "APPROVE")
+        self.assertEqual(len(self.urls), 1)
+
+    def test_grok_budget_cap(self):
+        p = self.mk(grok_max_calls_per_day=1)
+        p.review(SIG, ACCT)
+        self.assertEqual(p.review(SIG, ACCT)["decision"], "REJECT")
+        self.assertEqual(sum("x.ai" in u for u in self.urls), 1)
+
+    def test_keys_never_stored(self):
+        self.mk(grok_exc=RuntimeError("boom")).review(SIG, ACCT)
+        dump = json.dumps(self.store.query("SELECT * FROM ai_decisions") + self.store.query("SELECT * FROM events"))
+        self.assertNotIn("SECRET", dump)
+
+    def test_old_database_is_migrated(self):
+        import sqlite3, tempfile, os
+        path = os.path.join(tempfile.mkdtemp(), "old.db")
+        c = sqlite3.connect(path)
+        c.execute("CREATE TABLE ai_decisions (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, symbol TEXT NOT NULL, "
+                  "signal_id INTEGER, decision TEXT NOT NULL, confidence REAL, reasons TEXT, model TEXT, input_tokens INTEGER DEFAULT 0, "
+                  "output_tokens INTEGER DEFAULT 0, cost_usd REAL DEFAULT 0, error TEXT)")
+        c.execute("INSERT INTO ai_decisions(ts,symbol,decision,model) VALUES(1,'BTCUSDT','REJECT','m')")
+        c.commit(); c.close()
+        st = Store(path)
+        self.assertEqual(st.one("SELECT provider FROM ai_decisions")["provider"], "claude")
 
 
 class ScannerTests(unittest.TestCase):

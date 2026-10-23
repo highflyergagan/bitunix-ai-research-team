@@ -14,7 +14,7 @@ import logging
 import threading
 import traceback
 
-from .ai_review import ClaudeReviewer
+from .ai_review import ReviewPanel
 from .bitunix import INTERVAL_MS, BitunixPublicClient, MarketDataError
 from .config import Settings
 from .paper import PaperBroker
@@ -32,7 +32,7 @@ class Scanner:
         self.clock = clock
         self.client = client or BitunixPublicClient(pause=settings.request_pause_seconds)
         self.broker = broker or PaperBroker(store, settings, clock)
-        self.reviewer = reviewer or ClaudeReviewer(store, settings, clock)
+        self.reviewer = reviewer or ReviewPanel(store, settings, clock)
         self._scan_lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None

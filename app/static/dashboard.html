@@ -74,7 +74,7 @@ svg{width:100%;height:90px;display:block}
 
   <div class="grid2">
     <section class="card"><h2>Live signals (latest scan)</h2><div class="tbl" id="signals"></div></section>
-    <section class="card"><h2>Claude AI decisions</h2><div id="aiUsage" class="muted" style="margin-bottom:6px"></div><div class="tbl" id="ai"></div></section>
+    <section class="card"><h2>AI decisions (Claude &amp; Grok)</h2><div id="aiUsage" class="muted" style="margin-bottom:6px"></div><div class="tbl" id="ai"></div></section>
   </div>
 
   <section class="card"><h2>Closed paper trades</h2><div class="tbl" id="closed"></div></section>
@@ -166,14 +166,15 @@ async function refresh() {
   }
   if (ai) {
     const u = ai.usage;
-    $('aiUsage').textContent = `${u.model} · mode ${u.mode}${u.configured ? '' : ' (no API key)'} · today ${u.calls_today}/${u.max_calls_per_day} calls, $${num(u.cost_today_usd, 4)} of $${num(u.max_daily_usd, 2)} · all-time $${num(u.total_cost_usd, 4)}`;
-    $('ai').innerHTML = table([['Time', r => t(r.ts)], ['Symbol', r => esc(r.symbol)], ['Decision', r => `<span class="${r.decision === 'APPROVE' ? 'up' : 'down'}">${esc(r.decision)}</span>`],
+    const line = x => `${x.model} · ${x.mode}${x.configured ? '' : ' (no key)'} · today ${x.calls_today}/${x.max_calls_per_day} calls, $${num(x.cost_today_usd, 4)} of $${num(x.max_daily_usd, 2)} · all-time $${num(x.total_cost_usd, 4)}`;
+    $('aiUsage').innerHTML = 'Claude: ' + esc(line(u)) + (u.grok ? '<br>Grok: ' + esc(line(u.grok)) : '');
+    $('ai').innerHTML = table([['Time', r => t(r.ts)], ['AI', r => esc(r.provider === 'grok' ? 'Grok' : 'Claude')], ['Symbol', r => esc(r.symbol)], ['Decision', r => `<span class="${r.decision === 'APPROVE' ? 'up' : 'down'}">${esc(r.decision)}</span>`],
       ['Conf.', r => r.confidence == null ? '—' : num(r.confidence, 2)], ['Reasons', r => esc(r.reasons.join('; ')), 1]], ai.decisions);
   }
   const R = st.risk;
   $('risk').innerHTML = table([['Control', r => r[0]], ['Setting', r => r[1]]], [['Risk per trade', R.risk_per_trade_pct + '% of equity'], ['Max daily loss', R.max_daily_loss_pct + '% of day-start equity'],
     ['Max drawdown (kill switch)', R.max_drawdown_pct + '% from peak'], ['Max open positions', R.max_open_positions], ['Max leverage (notional cap)', R.max_leverage + 'x'], ['Max trades / day', R.max_trades_per_day],
-    ['Fees / slippage per fill', `${R.taker_fee_pct}% / ${R.slippage_pct}%+`], ['Min reward:risk after costs', R.min_reward_risk_after_costs], ['Time stop', R.max_hold_hours + 'h'], ['Real-money trading', '<b class="down">DISABLED</b>']]);
+    ['Fees / slippage per fill', `${R.taker_fee_pct}% / ${R.slippage_pct}%+`], ['Min reward:risk after costs', R.min_reward_risk_after_costs], ['Time stop', R.max_hold_hours + 'h'], ['AI review', esc(R.ai_reviewers)], ['Real-money trading', '<b class="down">DISABLED</b>']]);
   if (sc) $('scans').innerHTML = table([['Started', r => t(r.started_at)], ['Status', r => `<span class="${r.status === 'ok' ? 'up' : r.status === 'running' ? 'muted' : 'warn'}">${esc(r.status)}</span>`], ['Symbols', r => r.symbols_scanned],
     ['Signals', r => r.signals], ['Opened', r => r.opened], ['Closed', r => r.closed]], sc.scans);
   if (ev) $('events').innerHTML = table([['Time', r => t(r.ts)], ['Level', r => `<span class="${r.level === 'ERROR' ? 'down' : r.level === 'WARN' ? 'warn' : r.level === 'TRADE' ? 'up' : 'muted'}">${esc(r.level)}</span>`], ['Message', r => esc(r.message), 1]], ev.events);

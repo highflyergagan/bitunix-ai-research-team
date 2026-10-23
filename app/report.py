@@ -44,9 +44,18 @@ def build_report(store: Store, settings: Settings, clock=now_ms) -> dict:
         peak = max(peak, row["equity"])
         mdd = max(mdd, (peak - row["equity"]) / peak if peak else 0)
     final_equity = eq[-1]["equity"] if eq else exp["starting_equity"]
-    ai = store.one("SELECT COUNT(*) reviews, SUM(decision='APPROVE') approved, SUM(decision='REJECT') rejected, "
-                   "SUM(model IS NOT NULL) api_calls, COALESCE(SUM(input_tokens),0) inp, COALESCE(SUM(output_tokens),0) outp, "
-                   "COALESCE(SUM(cost_usd),0) cost, SUM(error IS NOT NULL) errors FROM ai_decisions WHERE ts BETWEEN ? AND ?", w)
+    def ai_stats(provider):
+        return store.one("SELECT COUNT(*) reviews, SUM(decision='APPROVE') approved, SUM(decision='REJECT') rejected, "
+                         "SUM(model IS NOT NULL) api_calls, COALESCE(SUM(input_tokens),0) inp, COALESCE(SUM(output_tokens),0) outp, "
+                         "COALESCE(SUM(cost_usd),0) cost, SUM(error IS NOT NULL) errors FROM ai_decisions "
+                         "WHERE ts BETWEEN ? AND ? AND provider=?", (*w, provider))
+
+    def ai_block(a, model):
+        return {"reviews": a["reviews"] or 0, "approved": a["approved"] or 0, "rejected": a["rejected"] or 0,
+                "api_calls": a["api_calls"] or 0, "input_tokens": a["inp"], "output_tokens": a["outp"],
+                "estimated_cost_usd": round(a["cost"], 5), "errors": a["errors"] or 0, "model": model}
+
+    ai, gk = ai_stats("claude"), ai_stats("grok")
     errs = store.query("SELECT ts, level, message FROM events WHERE level IN ('WARN','ERROR') AND ts BETWEEN ? AND ? "
                        "ORDER BY ts DESC LIMIT 25", w)
     net = sum(p["net_pnl"] for p in closed)
@@ -72,10 +81,9 @@ def build_report(store: Store, settings: Settings, clock=now_ms) -> dict:
         "equity": {"starting": round(exp["starting_equity"], 4), "final": round(final_equity, 4),
                    "change_pct": round((final_equity / exp["starting_equity"] - 1) * 100, 3),
                    "max_drawdown_pct": round(mdd * 100, 3)},
-        "claude": {"reviews": ai["reviews"] or 0, "approved": ai["approved"] or 0, "rejected": ai["rejected"] or 0,
-                   "api_calls": ai["api_calls"] or 0, "input_tokens": ai["inp"], "output_tokens": ai["outp"],
-                   "estimated_cost_usd": round(ai["cost"], 5), "errors": ai["errors"] or 0,
-                   "model": settings.claude_model},
+        "claude": ai_block(ai, settings.claude_model),
+        "grok": {**ai_block(gk, settings.grok_model), "mode": settings.grok_mode},
+        "ai_total_cost_usd": round(ai["cost"] + gk["cost"], 5),
         "errors_and_warnings": [{"ts": _iso(e["ts"]), "level": e["level"], "message": e["message"][:400]} for e in errs],
         "limitations": [
             "News, token unlocks, exchange listings and open interest have no verified data source; they are reported as unavailable, not assumed neutral.",

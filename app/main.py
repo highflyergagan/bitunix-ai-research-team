@@ -83,6 +83,7 @@ def create_app(settings: Settings | None = None, client=None, start_scheduler: b
                 "max_leverage": s.max_leverage, "max_trades_per_day": s.max_trades_per_day,
                 "taker_fee_pct": s.taker_fee * 100, "slippage_pct": s.slippage * 100,
                 "min_reward_risk_after_costs": s.min_reward_risk, "max_hold_hours": s.max_hold_hours,
+                "ai_reviewers": "Claude" + (" + Grok (both must approve)" if scanner.reviewer.grok.mode != "off" else ""),
             },
             "claude": scanner.reviewer.status(),
             "experiment": store.get("experiment"),

@@ -58,6 +58,9 @@ class Store:
             self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=FULL")
         self.conn.executescript(SCHEMA)
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(ai_decisions)")}
+        if "provider" not in cols:  # migrate databases created before Grok support
+            self.conn.execute("ALTER TABLE ai_decisions ADD COLUMN provider TEXT NOT NULL DEFAULT 'claude'")
 
     # --- helpers ---
     def execute(self, sql: str, params=()) -> sqlite3.Cursor:
