@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import Body, Depends, FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse
 
-from .config import LIVE_TRADING_ENABLED, Settings, assert_paper_only
+from .config import LIVE_TRADING_ENABLED, Settings, assert_paper_only, load_dotenv
 from .core import DEPARTMENTS, FAVORITES, candles, paper_trade, rank, tickers
 from .report import build_report, start_experiment
 from .scanner import Scanner
@@ -25,6 +25,8 @@ DASHBOARD_HTML = os.path.join(os.path.dirname(__file__), "static", "dashboard.ht
 
 
 def create_app(settings: Settings | None = None, client=None, start_scheduler: bool = True) -> FastAPI:
+    if settings is None:
+        load_dotenv()
     assert_paper_only()
     s = settings or Settings.from_env()
     store = Store(s.db_path)

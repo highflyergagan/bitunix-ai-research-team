@@ -88,5 +88,7 @@ def build_report(store: Store, settings: Settings, clock=now_ms) -> dict:
 
 
 if __name__ == "__main__":
+    from .config import load_dotenv
+    load_dotenv()
     s = Settings.from_env()
     print(json.dumps(build_report(Store(s.db_path), s), indent=2))

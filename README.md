@@ -48,9 +48,13 @@ app/
   store.py       SQLite persistence (data/paper.db)
   main.py        FastAPI API + dashboard
   static/dashboard.html
-  core.py, graph.py   original V4 research endpoints (kept)
+  core.py, graph.py   original V4 research endpoints (kept; pip install -r requirements-research.txt for LangGraph)
 tests/           safety, risk, paper exits, Claude safeguards, scanner, API auth
 ```
+
+## Run it on Windows (simplest)
+
+Install Python 3.12+ from python.org (tick "Add python.exe to PATH"), copy `.env.example` to `.env` and fill in `DASHBOARD_TOKEN` and `ANTHROPIC_API_KEY`, then double-click **start.bat**. Open http://127.0.0.1:8765. Keep the window open and the PC awake (Settings → System → Power → Sleep: Never) for the 24h test.
 
 ## Run it (Codespaces or any Linux box)
 

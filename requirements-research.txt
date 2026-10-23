@@ -1,0 +1,3 @@
+# Optional: only for the original /api/research LangGraph endpoint
+-r requirements.txt
+langgraph>=0.4,<2

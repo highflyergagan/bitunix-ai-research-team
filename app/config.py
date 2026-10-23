@@ -43,6 +43,22 @@ def _list(name: str, default: str) -> list[str]:
     return [s.strip().upper() for s in os.getenv(name, default).split(",") if s.strip()]
 
 
+def load_dotenv(path: str = ".env") -> None:
+    """Minimal .env loader (KEY=VALUE lines). Never overrides variables already set."""
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k, v = k.strip(), v.strip().strip('"').strip("'")
+                if k and k not in os.environ:
+                    os.environ[k] = v
+    except FileNotFoundError:
+        pass
+
+
 def assert_paper_only() -> None:
     """Refuse to run if anything in the environment asks for live trading."""
     for key in ("LIVE_TRADING", "LIVE_TRADING_ENABLED", "ENABLE_LIVE_TRADING", "REAL_TRADING"):
