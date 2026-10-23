@@ -10,7 +10,7 @@ Every 5 minutes (aligned to :00, :05, :10 …) the scanner:
 
 1. **Manages open paper positions** using *real subsequent* 1-minute Bitunix candles: a stop or target counts only if a later candle actually traded through it. If the stop and the target fall inside the same candle, it assumes the stop filled first. A gap through a level fills at the candle open. There's a 24h time stop, and funding is charged at each 8-hour settlement.
 2. **Builds a universe** from your favorites (BTC, ETH, QNT, BR) plus the 12 most liquid USDT perpetuals by 24h volume.
-3. **Computes a deterministic signal** for each symbol from closed 15m and 1h candles. It uses EMA 20/50 trend on both timeframes, MACD histogram, RSI (with an overbought/oversold block), ATR volatility band, swing support/resistance, volume expansion, a 24h liquidity floor and a funding-rate crowding filter. Output: **LONG BIAS / SHORT BIAS / NO TRADE**, always with a stop (≥ max(1.5×ATR, 0.6%)) and a 2.5R target.
+3. **Computes a deterministic signal** for each symbol from closed 15m and 1h candles. It uses EMA 20/50 trend on both timeframes, MACD histogram, RSI (with an overbought/oversold block), ATR volatility band, swing support/resistance, volume expansion, a 24h liquidity floor (2M USDT) and a funding-rate crowding filter. Output: **LONG BIAS / SHORT BIAS / NO TRADE**, always with a stop (≥ max(1.5×ATR, 0.6%)) and a 2.5R target.
 4. **Pre-checks risk.** Only candidates that pass go to **Claude** (`claude-haiku-5-5` by default) for an APPROVE/REJECT review. Claude cannot change size, stop or target. Errors, timeouts, malformed replies, confidence < 0.6, missing API key or an exhausted daily budget all mean **REJECT**.
 5. **Re-checks risk, then opens a simulated position** with fees and slippage.
 

@@ -40,6 +40,11 @@ class SafetyTests(unittest.TestCase):
             text = f.read_text()
             self.assertIsNone(pattern.search(text), f"suspicious order/auth code in {f.name}")
 
+    def test_funding_rate_percent_converted_to_fraction(self):
+        c = bitunix.BitunixPublicClient(pause=0)
+        c._get = lambda path, params=None: {"symbol": "BTCUSDT", "fundingRate": "0.0078"}
+        self.assertAlmostEqual(c.funding_rate("BTCUSDT"), 0.000078)
+
     def test_client_uses_get_only(self):
         src = (ROOT / "app" / "bitunix.py").read_text()
         self.assertNotRegex(src, r"\.(post|put|delete|patch)\(")

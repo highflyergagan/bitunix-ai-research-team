@@ -89,7 +89,7 @@ class BitunixPublicClient:
         return [dedup[k] for k in sorted(dedup)]
 
     def funding_rate(self, symbol: str) -> float | None:
-        """Current funding rate as a fraction (e.g. 0.0001 = 0.01%). None if unavailable."""
+        """Current funding rate as a fraction (0.0001 = 0.01%). None if unavailable."""
         try:
             d = self._get("/api/v1/futures/market/funding_rate", {"symbol": symbol})
         except MarketDataError:
@@ -99,6 +99,7 @@ class BitunixPublicClient:
         if not isinstance(d, dict):
             return None
         try:
-            return float(d.get("fundingRate"))
+            # Bitunix reports fundingRate in PERCENT (e.g. 0.0078 == 0.0078%); convert to a fraction.
+            return float(d.get("fundingRate")) / 100.0
         except (TypeError, ValueError):
             return None

@@ -97,7 +97,7 @@ class Settings:
     scan_interval_seconds: int = 300
     universe_top_n: int = 12
     favorites: list[str] = field(default_factory=lambda: ["BTCUSDT", "ETHUSDT", "QNTUSDT", "BRUSDT"])
-    min_quote_volume: float = 5_000_000.0
+    min_quote_volume: float = 2_000_000.0
     request_pause_seconds: float = 0.15
     autostart: bool = False
     require_verified_event_feeds: bool = False
