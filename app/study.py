@@ -113,8 +113,25 @@ class StudyMode:
                               "avg": round(sum(vals) / len(vals), 2),
                               "pct_kept_going": round(sum(1 for v in vals if (v > 0) == (kind == "PUMP")) / len(vals) * 100, 1)}
             stats[kind] = {"events": sum(1 for ev in events if ev["kind"] == kind), "forward": k}
+        # "short it after a pump" -- hypothetical, before fees, no trade is placed
+        pumps = [ev for ev in events if ev["kind"] == "PUMP"]
+        short = {}
+        for col in ("after_1h_pct", "after_4h_pct", "after_24h_pct"):
+            vals = [-ev[col] for ev in pumps if ev[col] is not None]
+            if vals:
+                short[col.replace("after_", "short_")] = {
+                    "n": len(vals), "median_return_pct": round(statistics.median(vals), 2),
+                    "win_rate_pct": round(sum(1 for v in vals if v > 0) / len(vals) * 100, 1)}
+        squeezes = [ev["best_since_pct"] for ev in pumps if ev["best_since_pct"] is not None]
+        if squeezes:
+            short["worst_squeeze_against_short_pct"] = max(squeezes)
+            short["median_max_rise_after_detection_pct"] = round(statistics.median(squeezes), 2)
+        stats["SHORT_AFTER_PUMP"] = short
         return {"mode": "STUDY ONLY -- no trades are placed from this data",
                 "rules": {"pump_or_dump_threshold_pct": round(self.min_change * 100), "min_quote_volume": self.min_volume},
                 "last_update": self.store.get("study_last_update"),
                 "stats": stats, "events": events,
+                "short_after_pump_note": "Hypothetical: shorting each PUMP at the price it was detected. Before fees, "
+                                         "funding and slippage. 'worst squeeze' = how far price rose AFTER detection "
+                                         "(what a short would have had to survive).",
                 "note": "Small samples are noise. Look for consistent patterns across weeks, not single days."}

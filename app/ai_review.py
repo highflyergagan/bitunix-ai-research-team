@@ -99,6 +99,17 @@ class _Reviewer:
     def _request(self, payload: dict) -> tuple[str, int, int, str]:
         raise NotImplementedError
 
+    def _call_json(self, system: str, user: str, schema: dict, max_tokens: int) -> tuple[dict, int, int, str]:
+        raise NotImplementedError
+
+    def call_json(self, system: str, user: str, schema: dict, max_tokens: int = 1200) -> dict:
+        """Structured call. Returns {"data", "model", "input_tokens", "output_tokens", "cost_usd"}; raises on failure."""
+        data, inp, outp, model = self._call_json(system, user, schema, max_tokens)
+        cost = inp / 1e6 * self.in_price + outp / 1e6 * self.out_price
+        if not isinstance(data, dict):
+            raise ValueError("reply was not a JSON object")
+        return {"data": data, "model": model, "input_tokens": inp, "output_tokens": outp, "cost_usd": cost}
+
     # --- shared ---
     def selftest(self) -> dict:
         """One tiny real API call to confirm the key and model work. Never returns the key."""
@@ -124,7 +135,7 @@ class _Reviewer:
                    .replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
         # calls = successful API reviews (the call cap); cost = everything billed, including failed calls ($ cap)
         r = self.store.one(
-            "SELECT SUM(error IS NULL) calls, COALESCE(SUM(cost_usd),0) cost FROM ai_decisions "
+            "SELECT SUM(error IS NULL AND decision IN ('APPROVE','REJECT')) calls, COALESCE(SUM(cost_usd),0) cost FROM ai_decisions "
             "WHERE ts>=? AND model IS NOT NULL AND provider=?", (day0, self.provider))
         return {"calls": r["calls"] or 0, "cost_usd": r["cost"]}
 
@@ -225,6 +236,22 @@ class ClaudeReviewer(_Reviewer):
         return text, int(usage.get("input_tokens", 0)), int(usage.get("output_tokens", 0)), j.get("model", self.model)
 
 
+    def _call_json(self, system, user, schema, max_tokens):
+        tool = {"name": "submit", "description": "Submit your structured answer.", "input_schema": schema}
+        body = {"model": self.model, "max_tokens": max_tokens, "system": system, "tools": [tool],
+                "tool_choice": {"type": "tool", "name": "submit"}, "messages": [{"role": "user", "content": user}]}
+        headers = {"x-api-key": self.api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
+        r = self._post(ANTHROPIC_URL, headers=headers, json=body, timeout=max(self.s.claude_timeout_seconds, 45))
+        if r.status_code != 200:
+            raise api_error("Claude", r)
+        j = r.json()
+        usage = j.get("usage", {})
+        blk = next((b for b in j.get("content", []) if b.get("type") == "tool_use"), None)
+        if blk is None:
+            raise ValueError("no structured answer in reply")
+        return blk.get("input", {}), int(usage.get("input_tokens", 0)), int(usage.get("output_tokens", 0)), j.get("model", self.model)
+
+
 class GrokReviewer(_Reviewer):
     provider = "grok"
     key_name = "XAI_API_KEY"
@@ -252,6 +279,26 @@ class GrokReviewer(_Reviewer):
         choices = j.get("choices") or [{}]
         text = (choices[0].get("message") or {}).get("content") or ""
         return text, int(usage.get("prompt_tokens", 0)), int(usage.get("completion_tokens", 0)), j.get("model", self.model)
+
+
+def _grok_call_json(self, system, user, schema, max_tokens):
+    sys = system + "\nReply with ONLY a JSON object matching this JSON schema:\n" + json.dumps(schema)
+    body = {"model": self.model, "max_tokens": max_tokens, "temperature": 0, "response_format": {"type": "json_object"},
+            "messages": [{"role": "system", "content": sys}, {"role": "user", "content": user}]}
+    headers = {"Authorization": "Bearer " + self.api_key, "content-type": "application/json"}
+    r = self._post(XAI_URL, headers=headers, json=body, timeout=max(self.s.claude_timeout_seconds, 45))
+    if r.status_code != 200:
+        raise api_error("Grok", r)
+    j = r.json()
+    usage = j.get("usage", {})
+    text = ((j.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+    m = re.search(r"\{.*\}", text, re.S)
+    if not m:
+        raise ValueError("no JSON in reply")
+    return json.loads(m.group(0)), int(usage.get("prompt_tokens", 0)), int(usage.get("completion_tokens", 0)), j.get("model", self.model)
+
+
+GrokReviewer._call_json = _grok_call_json
 
 
 class ReviewPanel:

@@ -15,6 +15,7 @@ import threading
 import traceback
 
 from .ai_review import ReviewPanel
+from .committee import ResearchCommittee
 from .bitunix import INTERVAL_MS, BitunixPublicClient, MarketDataError
 from .config import Settings
 from .paper import PaperBroker
@@ -33,7 +34,8 @@ class Scanner:
         self.clock = clock
         self.client = client or BitunixPublicClient(pause=settings.request_pause_seconds)
         self.broker = broker or PaperBroker(store, settings, clock)
-        self.reviewer = reviewer or ReviewPanel(store, settings, clock)
+        self.reviewer = reviewer or (ResearchCommittee(store, settings, clock) if settings.review_mode == "committee"
+                                     else ReviewPanel(store, settings, clock))
         self.study = StudyMode(store, settings.study_min_change, settings.study_min_volume, clock) if settings.study_enabled else None
         self._scan_lock = threading.Lock()
         self._stop = threading.Event()

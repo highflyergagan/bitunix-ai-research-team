@@ -111,6 +111,28 @@ curl http://127.0.0.1:8765/health
 
 State lives in the `paper-data` Docker volume. With `AUTOSTART=true` (or if automation was running), scanning resumes automatically after a reboot or container restart. Exits are then caught up from the 1-minute candles that were missed.
 
+## AI Research Committee (default review mode)
+
+When the rule engine finds a setup that passes the risk pre-checks, an AI committee meets:
+
+```
+Chief Market Intelligence Officer (Claude)  -- final APPROVE/REJECT
+├── Market News Research Lead (Claude): Research, Sentiment*, Stock Movement, News Credibility†, Market Impact†
+├── Equity Research Lead: Fundamental†, Financial Forensics†, Pre-Earnings Intelligence†
+├── Head of Industry & Geopolitical Research: Industry†, Geopolitical Risk†
+├── Head of Market Activity & Ownership (Claude): Market Volume, Insider Activity†, Fund Holdings†, Short-Seller*
+└── Independent Research Review Lead (Grok): Bull Case, Bear Case, Research Validation -> verdict
+```
+`*` uses the funding rate · `†` no data source is connected, so the analyst reports **no_data** with the reason and is
+never asked to guess (no AI call is spent on it). A trade needs the Independent Review verdict AND the Chief to approve
+with >= 0.6 confidence. About 4 AI calls per meeting (~$0.002-0.005). A rejected setup is not re-sent for 60 minutes.
+Set `REVIEW_MODE=panel` for the simpler Claude-then-Grok check.
+
+## Study mode (research only)
+
+Every scan also records coins that moved +/-30% in 24h (min $200k volume) and follows them for 24h, including a
+hypothetical "short after pump" result (before fees). No trades are ever placed from study data. See `/api/study`.
+
 ## Claude API cost
 
 Each review is about 1–1.5k input tokens and under 150 output tokens. That's roughly $0.0002 per call at Haiku 5.5 list prices ($0.10 / $0.50 per million tokens). The defaults cap usage at 40 calls and $0.50 per day. Claude is called only for candidates that already passed the rules, so on most scans it is not called at all. Update the `CLAUDE_*_USD_PER_MTOK` variables if pricing changes.

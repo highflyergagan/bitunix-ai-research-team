@@ -32,6 +32,16 @@ td.wrap{white-space:normal;min-width:220px}
 .grid2{display:grid;gap:14px;grid-template-columns:1fr} @media(min-width:860px){.grid2{grid-template-columns:1fr 1fr}}
 pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0e1622;padding:12px;border-radius:8px;max-height:420px;overflow:auto;font-size:12px}
 svg{width:100%;height:90px;display:block}
+.org{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.chief{text-align:center;border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px;background:#0e1622}
+.dept{border:1px solid var(--line);border-radius:10px;padding:10px;background:#0e1622}
+.dept h3{font-size:13px;margin:0 0 4px;display:flex;gap:6px;align-items:center}
+.dot2{width:12px;height:12px;border-radius:50%;flex:none}
+.an{border-top:1px solid var(--line);padding:6px 0;font-size:12.5px}
+.an b{font-weight:600}
+.st{display:inline-block;font-size:11px;font-weight:700;padding:0 6px;border-radius:99px;margin-left:4px}
+.st.bullish,.st.supports_trade{background:#103b25;color:var(--up)} .st.bearish,.st.against_trade{background:#431a1a;color:var(--down)}
+.st.neutral,.st.mixed{background:#1c2638;color:var(--muted)} .st.no_data{background:#0b111b;color:#5d6f88;border:1px dashed #33445e}
 #login{max-width:520px;margin:40px auto}
 .hidden{display:none}
 </style>
@@ -83,6 +93,8 @@ svg{width:100%;height:90px;display:block}
     <section class="card"><h2>Risk controls</h2><div class="tbl" id="risk"></div></section>
     <section class="card"><h2>Recent scans</h2><div class="tbl" id="scans"></div></section>
   </div>
+
+  <section class="card"><h2>AI Research Committee</h2><div id="committee"><p class="muted">Loading…</p></div></section>
 
   <section class="card"><h2>Study mode: pump &amp; dump watch (no trades)</h2><div id="studySum" class="muted" style="margin-bottom:6px"></div><div class="tbl" id="study"></div></section>
 
@@ -142,7 +154,7 @@ async function refresh() {
   if (!TOKEN) return;
   let st;
   try { st = await api('status'); } catch (e) { logout(); $('loginErr').textContent = e.message; return; }
-  const [pos, sig, ai, sc, ev, eq, stu] = await Promise.all([api('positions'), api('signals?limit=80'), api('ai-decisions?limit=30'), api('scans?limit=12'), api('events?limit=40'), api('equity?limit=600'), api('study?limit=40')].map(p => p.catch(() => null)));
+  const [pos, sig, ai, sc, ev, eq, stu, com] = await Promise.all([api('positions'), api('signals?limit=80'), api('ai-decisions?limit=30'), api('scans?limit=12'), api('events?limit=40'), api('equity?limit=600'), api('study?limit=40'), api('committee?limit=6')].map(p => p.catch(() => null)));
   const a = st.account;
   $('autoDot').classList.toggle('on', st.automation_running);
   $('autoText').textContent = st.automation_running ? 'Automation running' : 'Automation stopped';
@@ -179,10 +191,30 @@ async function refresh() {
     ['Fees / slippage per fill', `${R.taker_fee_pct}% / ${R.slippage_pct}%+`], ['Min reward:risk after costs', R.min_reward_risk_after_costs], ['Time stop', R.max_hold_hours + 'h'], ['AI review', esc(R.ai_reviewers)], ['Real-money trading', '<b class="down">DISABLED</b>']]);
   if (sc) $('scans').innerHTML = table([['Started', r => t(r.started_at)], ['Status', r => `<span class="${r.status === 'ok' ? 'up' : r.status === 'running' ? 'muted' : 'warn'}">${esc(r.status)}</span>`], ['Symbols', r => r.symbols_scanned],
     ['Signals', r => r.signals], ['Opened', r => r.opened], ['Closed', r => r.closed]], sc.scans);
+  if (com && com.structure) {
+    const run = com.runs[0];
+    const COLORS = {red: '#ef4565', blue: '#2f7cf6', orange: '#f5841f', green: '#21c06a', white: '#e8edf5'};
+    const depts = run ? run.reports : com.structure.departments.map(d => ({lead: d.lead, color: d.color, engine: d.engine,
+      lead_stance: d.analysts.some(a => a.has_data) ? 'mixed' : 'no_data', lead_summary: d.analysts.some(a => a.has_data) ? 'Waiting for the first trade candidate.' : 'No connected data source; abstains.',
+      analysts: d.analysts.map(a => ({role: a.role, stance: a.has_data ? 'neutral' : 'no_data', finding: a.has_data ? a.note : a.note}))}));
+    const chief = run ? `<div class="chief"><div class="muted" style="font-size:12px">Chief Market Intelligence Officer · Claude</div>
+        <div style="font-size:18px;font-weight:700;margin:4px 0"><span class="${run.decision === 'APPROVE' ? 'up' : 'down'}">${esc(run.decision)}</span> ${esc(run.symbol)} ${pill(run.bias)}</div>
+        <div class="muted" style="font-size:12px">${t(run.ts)} · confidence ${run.confidence == null ? '—' : num(run.confidence, 2)} · ${run.ai_calls} AI calls · $${num(run.cost_usd, 4)}${run.error ? ' · <span class="down">error: ' + esc(run.error) + '</span>' : ''}</div>
+        <div style="margin-top:6px;font-size:13px">${esc(run.summary || '')}</div></div>`
+      : `<div class="chief"><div class="muted" style="font-size:12px">Chief Market Intelligence Officer · Claude</div><div style="margin-top:4px">No meeting yet. The committee meets only when the rule engine finds a trade setup.</div></div>`;
+    const deptHtml = depts.map(d => `<div class="dept"><h3><span class="dot2" style="background:${COLORS[d.color] || '#888'}"></span>${esc(d.lead)}</h3>
+        <div class="muted" style="font-size:11.5px">${esc(d.engine || '')}${d.verdict ? ' · verdict <b class="' + (d.verdict === 'APPROVE' ? 'up' : 'down') + '">' + esc(d.verdict) + '</b> ' + num(d.verdict_confidence, 2) : ''}</div>
+        <div style="font-size:12.5px;margin:6px 0">${esc(d.lead_summary || '')} <span class="st ${esc(d.lead_stance)}">${esc((d.lead_stance || '').replace('_', ' '))}</span></div>
+        ${d.analysts.map(a => `<div class="an"><b>${esc(a.role)}</b><span class="st ${esc(a.stance)}">${esc(a.stance.replace('_', ' '))}</span><div class="muted">${esc(a.finding || '')}</div></div>`).join('')}</div>`).join('');
+    const hist = com.runs.slice(1).map(r => `${t(r.ts)} ${esc(r.symbol)} <span class="${r.decision === 'APPROVE' ? 'up' : 'down'}">${esc(r.decision)}</span>`).join(' · ');
+    $('committee').innerHTML = chief + `<div class="org">${deptHtml}</div>` + (hist ? `<p class="muted" style="font-size:12px;margin-top:10px">Earlier meetings: ${hist}</p>` : '');
+  }
   if (stu && stu.events) {
     const pc = v => v == null ? '<span class="muted">…</span>' : `<span class="${cls(v)}">${v > 0 ? '+' : ''}${num(v, 1)}%</span>`;
     const sm = k => { const f = (stu.stats[k] || {}).forward || {}; const d = f.after_24h_pct || f.after_4h_pct || f.after_1h_pct; return `${k}: ${(stu.stats[k] || {}).events || 0} events` + (d ? ` · median after ${f.after_24h_pct ? '24h' : f.after_4h_pct ? '4h' : '1h'} ${num(d.median, 1)}% (${d.pct_kept_going}% kept going, n=${d.n})` : ''); };
-    $('studySum').textContent = `Coins moving ±${stu.rules.pump_or_dump_threshold_pct}%+ in 24h · ${sm('PUMP')} · ${sm('DUMP')}`;
+    const sh = stu.stats.SHORT_AFTER_PUMP || {}; const sk = sh.short_24h_pct || sh.short_4h_pct || sh.short_1h_pct;
+    const shortTxt = sk ? ` · SHORT after pump (hypothetical, before fees): median ${num(sk.median_return_pct, 1)}%, win ${sk.win_rate_pct}% (n=${sk.n})` + (sh.worst_squeeze_against_short_pct != null ? `, worst squeeze +${num(sh.worst_squeeze_against_short_pct, 1)}%` : '') : ' · SHORT-after-pump stats appear once pumps are 1h old';
+    $('studySum').textContent = `Coins moving ±${stu.rules.pump_or_dump_threshold_pct}%+ in 24h · ${sm('PUMP')} · ${sm('DUMP')}` + shortTxt;
     $('study').innerHTML = table([['Detected', r => t(r.detected_at)], ['Coin', r => esc(r.symbol)], ['Type', r => `<span class="pill ${r.kind === 'PUMP' ? 'L' : 'S'}">${esc(r.kind)}</span>`],
       ['24h move', r => pc(r.change_24h_pct)], ['+1h', r => pc(r.after_1h_pct)], ['+4h', r => pc(r.after_4h_pct)], ['+24h', r => pc(r.after_24h_pct)], ['Now', r => pc(r.now_pct)],
       ['Best', r => pc(r.best_since_pct)], ['Worst', r => pc(r.worst_since_pct)]], stu.events);

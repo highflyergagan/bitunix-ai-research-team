@@ -83,7 +83,9 @@ def create_app(settings: Settings | None = None, client=None, start_scheduler: b
                 "max_leverage": s.max_leverage, "max_trades_per_day": s.max_trades_per_day,
                 "taker_fee_pct": s.taker_fee * 100, "slippage_pct": s.slippage * 100,
                 "min_reward_risk_after_costs": s.min_reward_risk, "max_hold_hours": s.max_hold_hours,
-                "ai_reviewers": "Claude" + (" + Grok (both must approve)" if scanner.reviewer.grok.mode != "off" else ""),
+                "ai_reviewers": ("Research committee: 4 departments + Independent Review (Grok) + Chief (Claude)"
+                                 if s.review_mode == "committee" else
+                                 "Claude" + (" + Grok (both must approve)" if scanner.reviewer.grok.mode != "off" else "")),
             },
             "claude": scanner.reviewer.status(),
             "experiment": store.get("experiment"),
@@ -140,6 +142,13 @@ def create_app(settings: Settings | None = None, client=None, start_scheduler: b
     @app.post("/api/scan-now", dependencies=[Depends(auth)])
     def scan_now():
         return scanner.scan_once()
+
+    @app.get("/api/committee", dependencies=[Depends(auth)])
+    def committee(limit: int = 5):
+        rv = scanner.reviewer
+        if not hasattr(rv, "latest"):
+            return {"mode": "panel", "runs": []}
+        return {"structure": rv.structure(), "runs": rv.latest(min(limit, 50))}
 
     @app.get("/api/study", dependencies=[Depends(auth)])
     def study(limit: int = 100):

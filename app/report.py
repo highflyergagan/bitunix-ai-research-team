@@ -15,6 +15,17 @@ def _iso(ms):
     return dt.datetime.fromtimestamp(ms / 1000, dt.timezone.utc).isoformat(timespec="seconds") if ms else None
 
 
+def _committee_brief(store: Store, w) -> dict:
+    try:
+        r = store.one("SELECT COUNT(*) runs, SUM(decision='APPROVE') approved, SUM(decision='REJECT') rejected, "
+                      "SUM(error IS NOT NULL) errors, COALESCE(SUM(ai_calls),0) calls, COALESCE(SUM(cost_usd),0) cost "
+                      "FROM committee_runs WHERE ts BETWEEN ? AND ?", w)
+    except Exception:
+        return {"enabled": False}
+    return {"meetings": r["runs"] or 0, "approved": r["approved"] or 0, "rejected": r["rejected"] or 0,
+            "errors": r["errors"] or 0, "ai_calls": r["calls"], "cost_usd": round(r["cost"], 5)}
+
+
 def _study_brief(store: Store, w) -> dict:
     try:
         rows = store.query("SELECT kind, COUNT(*) n FROM study_events WHERE detected_at BETWEEN ? AND ? GROUP BY kind", w)
@@ -92,6 +103,7 @@ def build_report(store: Store, settings: Settings, clock=now_ms) -> dict:
         "claude": ai_block(ai, settings.claude_model),
         "grok": {**ai_block(gk, settings.grok_model), "mode": settings.grok_mode},
         "ai_total_cost_usd": round(ai["cost"] + gk["cost"], 5),
+        "research_committee": _committee_brief(store, w),
         "study_mode": _study_brief(store, w),
         "errors_and_warnings": [{"ts": _iso(e["ts"]), "level": e["level"], "message": e["message"][:400]} for e in errs],
         "limitations": [
