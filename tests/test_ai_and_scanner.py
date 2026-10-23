@@ -41,6 +41,7 @@ class ReviewerTests(unittest.TestCase):
         self.assertEqual(r["decision"], "APPROVE")
         self.assertAlmostEqual(r["cost_usd"], 800 / 1e6 * 0.10 + 60 / 1e6 * 0.50)
         self.assertEqual(self.calls[0][2]["model"], "claude-haiku-5-5")
+        self.assertNotIn("temperature", self.calls[0][2])  # rejected by current Claude models
 
     def test_missing_key_rejects_when_required(self):
         s = settings(ai_mode="required", anthropic_api_key="")

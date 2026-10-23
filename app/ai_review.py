@@ -180,7 +180,8 @@ class ClaudeReviewer(_Reviewer):
         self.in_price, self.out_price = s.claude_input_usd_per_mtok, s.claude_output_usd_per_mtok
 
     def _request(self, payload):
-        body = {"model": self.model, "max_tokens": 300, "temperature": 0, "system": SYSTEM,
+        # No `temperature`: current Claude models reject it ("temperature is deprecated for this model").
+        body = {"model": self.model, "max_tokens": 300, "system": SYSTEM,
                 "messages": [{"role": "user", "content": "Review this paper-trade candidate:\n" + json.dumps(payload)}]}
         headers = {"x-api-key": self.api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
         r = self._post(ANTHROPIC_URL, headers=headers, json=body, timeout=self.s.claude_timeout_seconds)
