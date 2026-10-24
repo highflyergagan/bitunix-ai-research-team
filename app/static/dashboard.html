@@ -100,6 +100,8 @@ svg{width:100%;height:90px;display:block}
 
   <section class="card"><h2>Study mode: pump &amp; dump watch (no trades)</h2><div id="studySum" class="muted" style="margin-bottom:6px"></div><div class="tbl" id="study"></div></section>
 
+  <section class="card"><h2>New Listing Watch: new Bitunix futures listings (no trades)</h2><div id="listSum" class="muted" style="margin-bottom:6px"></div><div class="tbl" id="listings"></div></section>
+
   <section class="card"><h2>Event log</h2><div class="tbl" id="events"></div></section>
   <section class="card hidden" id="reportCard"><h2>Experiment report</h2><pre id="report"></pre></section>
   <p class="muted" style="font-size:12px">Simulated results only. No real orders are placed. Signals are research hypotheses, not predictions or financial advice.</p>
@@ -228,6 +230,14 @@ async function refresh() {
     $('study').innerHTML = table([['Detected', r => t(r.detected_at)], ['Coin', r => esc(r.symbol)], ['Type', r => `<span class="pill ${r.kind === 'PUMP' ? 'L' : 'S'}">${esc(r.kind)}</span>`],
       ['24h move', r => pc(r.change_24h_pct)], ['+1h', r => pc(r.after_1h_pct)], ['+4h', r => pc(r.after_4h_pct)], ['+24h', r => pc(r.after_24h_pct)], ['Now', r => pc(r.now_pct)],
       ['Best', r => pc(r.best_since_pct)], ['Worst', r => pc(r.worst_since_pct)]], stu.events);
+  }
+  if (stu && stu.new_listings) {
+    const nl = stu.new_listings, pc2 = v => v == null ? '<span class="muted">…</span>' : `<span class="${cls(v)}">${v > 0 ? '+' : ''}${num(v, 1)}%</span>`;
+    const ss = Object.entries(nl.stats).map(([k, v]) => `${k.replace('after_', '+').replace('_pct', '')}: median ${num(v.median, 1)}%, up ${v.pct_up}% (n=${v.n})`).join(' · ');
+    $('listSum').textContent = ss || 'Waiting for the first new listing (the first scan only records existing coins).';
+    $('listings').innerHTML = table([['Listed (seen)', r => t(r.first_seen)], ['Coin', r => esc(r.symbol)], ['Price', r => px(r.price_at_listing)],
+      ['+1h', r => pc2(r.after_1h_pct)], ['+4h', r => pc2(r.after_4h_pct)], ['+24h', r => pc2(r.after_24h_pct)], ['+3d', r => pc2(r.after_72h_pct)], ['+7d', r => pc2(r.after_168h_pct)],
+      ['Now', r => pc2(r.now_pct)], ['Best', r => pc2(r.best_since_pct)], ['Worst', r => pc2(r.worst_since_pct)]], nl.events);
   }
   if (ev) $('events').innerHTML = table([['Time', r => t(r.ts)], ['Level', r => `<span class="${r.level === 'ERROR' ? 'down' : r.level === 'WARN' ? 'warn' : r.level === 'TRADE' ? 'up' : r.level === 'STUDY' || r.level === 'LAB' ? 'warn' : 'muted'}">${esc(r.level)}</span>`], ['Message', r => esc(r.message), 1]], ev.events);
 }

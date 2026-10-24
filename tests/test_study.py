@@ -48,6 +48,25 @@ class StudyTests(unittest.TestCase):
         f = self.st.summary()["stats"]["PUMP"]["forward"]["after_24h_pct"]
         self.assertEqual(f["pct_kept_going"], 0.0)
 
+    def test_new_listing_detection(self):
+        self.st.update([tk("AAAUSDT", 1, 1.0), tk("BBBUSDT", 1, 1.0)])           # first run: seeds known symbols
+        self.assertEqual(self.st.listings_summary()["events"], [])
+        self.clock.t += 300_000
+        self.st.update([tk("AAAUSDT", 1, 1.0), tk("BBBUSDT", 1, 1.0), tk("NEWUSDT", 1, 2.0)])
+        ev = self.st.listings_summary()["events"]
+        self.assertEqual([e["symbol"] for e in ev], ["NEWUSDT"])
+        t0 = self.clock.t
+        for h, p in ((1, 3.0), (4, 2.5), (24, 1.0)):
+            self.clock.t = t0 + h * H
+            self.st.update([tk("NEWUSDT", 1, p)])
+        e = self.st.listings_summary()["events"][0]
+        self.assertEqual(e["after_1h_pct"], 50.0)
+        self.assertEqual(e["after_24h_pct"], -50.0)
+        self.assertEqual(e["best_since_pct"], 50.0)
+        self.clock.t += H
+        self.st.update([tk("NEWUSDT", 1, 1.0)])
+        self.assertEqual(len(self.st.listings_summary()["events"]), 1)  # never re-detected
+
     def test_no_trades_from_study(self):
         self.st.update([tk("AAAUSDT", 1, 3)])
         self.assertEqual(self.store.one("SELECT COUNT(*) n FROM positions")["n"], 0)
