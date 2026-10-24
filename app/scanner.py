@@ -23,6 +23,7 @@ from .risk import RiskRejected
 from .store import Store, now_ms
 from .strategy import LONG, SHORT, generate_signal
 from .study import StudyMode
+from .lab import StrategyLab
 
 log = logging.getLogger("scanner")
 
@@ -36,6 +37,8 @@ class Scanner:
         self.broker = broker or PaperBroker(store, settings, clock)
         self.reviewer = reviewer or (ResearchCommittee(store, settings, clock) if settings.review_mode == "committee"
                                      else ReviewPanel(store, settings, clock))
+        self.lab = (StrategyLab(settings, self.client, self._candles_since, clock, settings.lab_pump_threshold)
+                    if settings.lab_enabled else None)
         self.study = StudyMode(store, settings.study_min_change, settings.study_min_volume, clock) if settings.study_enabled else None
         self._scan_lock = threading.Lock()
         self._stop = threading.Event()
@@ -135,6 +138,7 @@ class Scanner:
 
         # 3. signals
         candidates = []
+        market: dict[str, dict] = {}
         for sym in universe:
             try:
                 c15 = self.client.klines(sym, "15m", 200)
@@ -147,6 +151,8 @@ class Scanner:
                                       min_quote_volume=self.s.min_quote_volume,
                                       require_verified_event_feeds=self.s.require_verified_event_feeds)
                 stats["symbols_scanned"] += 1
+                market[sym] = {"c15": c15, "c1h": c1h, "funding_rate": fr, "main_signal": sig,
+                               "quote_volume": by_sym[sym]["quote_volume"]}
                 sid = self.store.execute(
                     "INSERT INTO signals(scan_id,ts,symbol,bias,score,entry,stop_loss,take_profit,payload) VALUES(?,?,?,?,?,?,?,?,?)",
                     (scan_id, now, sym, sig["bias"], sig["score"], sig["entry"], sig["stop_loss"], sig["take_profit"],
@@ -178,6 +184,18 @@ class Scanner:
                 self.store.log("INFO", f"{sig['symbol']} {side} rejected by risk engine: {exc}")
             except Exception as exc:
                 errors.append(f"{sig['symbol']} open: {exc}")
+
+        # 5. strategy lab (separate paper accounts, rule-only) -- must never break the main scan
+        if self.lab:
+            try:
+                prices = {k: v["price"] for k, v in by_sym.items() if v["price"] > 0}
+                lab = self.lab.run(market, prices, tick)
+                stats["lab"] = {k: {"opened": v["opened"], "closed": v["closed"]} for k, v in lab.items()}
+                for k, v in lab.items():
+                    if v["opened"] or v["closed"]:
+                        self.store.log("LAB", f"{k}: opened {v['opened']}, closed {v['closed']} (paper)")
+            except Exception as exc:
+                errors.append(f"strategy lab: {exc}")
 
         self.broker.roll_day_and_limits()
         self.broker.record_equity()

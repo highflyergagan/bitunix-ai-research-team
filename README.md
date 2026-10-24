@@ -128,6 +128,21 @@ never asked to guess (no AI call is spent on it). A trade needs the Independent 
 with >= 0.6 confidence. About 4 AI calls per meeting (~$0.002-0.005). A rejected setup is not re-sent for 60 minutes.
 Set `REVIEW_MODE=panel` for the simpler Claude-then-Grok check.
 
+## Strategy Lab (paper, rule-only)
+
+Five extra strategies paper-trade at the same time, each in its **own $100 virtual account** (`data/lab_<name>.db`) with
+the same risk engine, fees, slippage and real-candle exits as the main account. They make no AI calls.
+
+| Strategy | Idea |
+|---|---|
+| Trend (rules only) | the main strategy without the AI committee, to measure what the AI adds |
+| Mean reversion | outside the 2-sigma Bollinger band with an RSI extreme, 1h trend not against |
+| Breakout with volume | 12h range break with >= 1.5x volume, 1h trend agreeing |
+| Funding-rate extreme | contrarian when funding >= +/-0.05% and 15m momentum turns |
+| Pump fade | short coins up >= 50% in 24h once 15m momentum breaks; stop above the 4h spike high; ~0.5% slippage assumed |
+
+Compare them on the dashboard or `GET /api/lab`. Days or weeks of results are needed before any conclusion.
+
 ## Study mode (research only)
 
 Every scan also records coins that moved +/-30% in 24h (min $200k volume) and follows them for 24h, including a

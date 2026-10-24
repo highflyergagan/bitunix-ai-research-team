@@ -122,6 +122,9 @@ class Settings:
     grok_min_confidence: float = 0.6
     # AI review structure: committee (Chief + 5 departments) | panel (Claude then Grok)
     review_mode: str = "committee"
+    # Strategy lab: extra rule-only strategies, each in its own $100 paper account
+    lab_enabled: bool = True
+    lab_pump_threshold: float = 0.50
     # Study mode (pump/dump research, never trades)
     study_enabled: bool = True
     study_min_change: float = 0.30  # +/-30% in 24h
@@ -175,6 +178,8 @@ class Settings:
         s.grok_min_confidence = _f("GROK_MIN_CONFIDENCE", s.grok_min_confidence)
         rm = os.getenv("REVIEW_MODE", s.review_mode).strip().lower()
         s.review_mode = rm if rm in ("committee", "panel") else "committee"
+        s.lab_enabled = _b("LAB_ENABLED", s.lab_enabled)
+        s.lab_pump_threshold = max(0.2, _f("LAB_PUMP_THRESHOLD", s.lab_pump_threshold))
         s.study_enabled = _b("STUDY_ENABLED", s.study_enabled)
         s.study_min_change = max(0.05, _f("STUDY_MIN_CHANGE", s.study_min_change))
         s.study_min_volume = _f("STUDY_MIN_VOLUME", s.study_min_volume)

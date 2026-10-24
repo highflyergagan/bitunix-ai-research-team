@@ -15,6 +15,22 @@ def _iso(ms):
     return dt.datetime.fromtimestamp(ms / 1000, dt.timezone.utc).isoformat(timespec="seconds") if ms else None
 
 
+def _lab_brief(settings) -> list:
+    import os
+    from .lab import STRATEGIES
+    from .paper import PaperBroker
+    out = []
+    for key, name in STRATEGIES.items():
+        path = os.path.join(settings.data_dir, f"lab_{key}.db")
+        if not os.path.exists(path):
+            continue
+        a = PaperBroker(Store(path), settings).account()
+        out.append({"strategy": name, "equity": a["equity"], "return_pct": a["total_return_pct"],
+                    "closed_trades": a["closed_trades"], "wins": a["wins"], "losses": a["losses"],
+                    "open_now": a["open_positions"]})
+    return out
+
+
 def _committee_brief(store: Store, w) -> dict:
     try:
         r = store.one("SELECT COUNT(*) runs, SUM(decision='APPROVE') approved, SUM(decision='REJECT') rejected, "
@@ -104,6 +120,7 @@ def build_report(store: Store, settings: Settings, clock=now_ms) -> dict:
         "grok": {**ai_block(gk, settings.grok_model), "mode": settings.grok_mode},
         "ai_total_cost_usd": round(ai["cost"] + gk["cost"], 5),
         "research_committee": _committee_brief(store, w),
+        "strategy_lab": _lab_brief(settings),
         "study_mode": _study_brief(store, w),
         "errors_and_warnings": [{"ts": _iso(e["ts"]), "level": e["level"], "message": e["message"][:400]} for e in errs],
         "limitations": [

@@ -94,6 +94,8 @@ svg{width:100%;height:90px;display:block}
     <section class="card"><h2>Recent scans</h2><div class="tbl" id="scans"></div></section>
   </div>
 
+  <section class="card"><h2>Strategy Lab: each strategy has its own $100 paper account</h2><div class="tbl" id="lab"></div><p class="muted" style="font-size:12px">Lab strategies are rule-only (no AI). Same risk rules, fees and slippage as the main account. Pump fade assumes ~0.5% slippage per fill.</p></section>
+
   <section class="card"><h2>AI Research Committee</h2><div id="committee"><p class="muted">Loading…</p></div></section>
 
   <section class="card"><h2>Study mode: pump &amp; dump watch (no trades)</h2><div id="studySum" class="muted" style="margin-bottom:6px"></div><div class="tbl" id="study"></div></section>
@@ -154,7 +156,7 @@ async function refresh() {
   if (!TOKEN) return;
   let st;
   try { st = await api('status'); } catch (e) { logout(); $('loginErr').textContent = e.message; return; }
-  const [pos, sig, ai, sc, ev, eq, stu, com] = await Promise.all([api('positions'), api('signals?limit=80'), api('ai-decisions?limit=30'), api('scans?limit=12'), api('events?limit=40'), api('equity?limit=600'), api('study?limit=40'), api('committee?limit=6')].map(p => p.catch(() => null)));
+  const [pos, sig, ai, sc, ev, eq, stu, com, lab] = await Promise.all([api('positions'), api('signals?limit=80'), api('ai-decisions?limit=30'), api('scans?limit=12'), api('events?limit=40'), api('equity?limit=600'), api('study?limit=40'), api('committee?limit=6'), api('lab')].map(p => p.catch(() => null)));
   const a = st.account;
   $('autoDot').classList.toggle('on', st.automation_running);
   $('autoText').textContent = st.automation_running ? 'Automation running' : 'Automation stopped';
@@ -191,6 +193,14 @@ async function refresh() {
     ['Fees / slippage per fill', `${R.taker_fee_pct}% / ${R.slippage_pct}%+`], ['Min reward:risk after costs', R.min_reward_risk_after_costs], ['Time stop', R.max_hold_hours + 'h'], ['AI review', esc(R.ai_reviewers)], ['Real-money trading', '<b class="down">DISABLED</b>']]);
   if (sc) $('scans').innerHTML = table([['Started', r => t(r.started_at)], ['Status', r => `<span class="${r.status === 'ok' ? 'up' : r.status === 'running' ? 'muted' : 'warn'}">${esc(r.status)}</span>`], ['Symbols', r => r.symbols_scanned],
     ['Signals', r => r.signals], ['Opened', r => r.opened], ['Closed', r => r.closed]], sc.scans);
+  if (lab && lab.enabled) {
+    const rowsL = [{...lab.main, key: 'main'}].concat(lab.strategies);
+    $('lab').innerHTML = table([['Strategy', r => esc(r.name) + (r.ai ? ' <span class="pill L">AI</span>' : '')], ['Equity', r => num(r.equity, 2)],
+      ['Return', r => `<span class="${cls(r.return_pct)}">${num(r.return_pct, 2)}%</span>`], ['Open', r => r.open], ['Closed', r => r.closed],
+      ['W/L', r => `${r.wins}/${r.losses}`], ['Win %', r => r.win_rate_pct == null ? '—' : r.win_rate_pct + '%'],
+      ['Max DD', r => r.max_drawdown_pct == null ? '—' : num(r.max_drawdown_pct, 2) + '%'],
+      ['Open now', r => (r.open_positions || []).map(p => `${esc(p.symbol)} ${esc(p.side)}`).join(', ') || '—', 1]], rowsL);
+  }
   if (com && com.structure) {
     const run = com.runs[0];
     const COLORS = {red: '#ef4565', blue: '#2f7cf6', orange: '#f5841f', green: '#21c06a', white: '#e8edf5'};
@@ -219,7 +229,7 @@ async function refresh() {
       ['24h move', r => pc(r.change_24h_pct)], ['+1h', r => pc(r.after_1h_pct)], ['+4h', r => pc(r.after_4h_pct)], ['+24h', r => pc(r.after_24h_pct)], ['Now', r => pc(r.now_pct)],
       ['Best', r => pc(r.best_since_pct)], ['Worst', r => pc(r.worst_since_pct)]], stu.events);
   }
-  if (ev) $('events').innerHTML = table([['Time', r => t(r.ts)], ['Level', r => `<span class="${r.level === 'ERROR' ? 'down' : r.level === 'WARN' ? 'warn' : r.level === 'TRADE' ? 'up' : r.level === 'STUDY' ? 'warn' : 'muted'}">${esc(r.level)}</span>`], ['Message', r => esc(r.message), 1]], ev.events);
+  if (ev) $('events').innerHTML = table([['Time', r => t(r.ts)], ['Level', r => `<span class="${r.level === 'ERROR' ? 'down' : r.level === 'WARN' ? 'warn' : r.level === 'TRADE' ? 'up' : r.level === 'STUDY' || r.level === 'LAB' ? 'warn' : 'muted'}">${esc(r.level)}</span>`], ['Message', r => esc(r.message), 1]], ev.events);
 }
 setInterval(() => { $('clock').textContent = new Date().toLocaleTimeString(); }, 1000);
 setInterval(refresh, 30000);

@@ -150,6 +150,18 @@ def create_app(settings: Settings | None = None, client=None, start_scheduler: b
             return {"mode": "panel", "runs": []}
         return {"structure": rv.structure(), "runs": rv.latest(min(limit, 50))}
 
+    @app.get("/api/lab", dependencies=[Depends(auth)])
+    def lab():
+        if not scanner.lab:
+            return {"enabled": False, "strategies": []}
+        main = scanner.broker.account()
+        return {"enabled": True, "main": {"name": "Trend + AI Research Committee (main account)", "ai": True,
+                                          "equity": main["equity"], "return_pct": main["total_return_pct"],
+                                          "open": main["open_positions"], "closed": main["closed_trades"],
+                                          "wins": main["wins"], "losses": main["losses"],
+                                          "win_rate_pct": main["win_rate_pct"]},
+                "strategies": scanner.lab.summary()}
+
     @app.get("/api/study", dependencies=[Depends(auth)])
     def study(limit: int = 100):
         if not scanner.study:
