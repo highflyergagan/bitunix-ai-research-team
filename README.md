@@ -130,7 +130,7 @@ Set `REVIEW_MODE=panel` for the simpler Claude-then-Grok check.
 
 ## Strategy Lab (paper, rule-only)
 
-Five extra strategies paper-trade at the same time, each in its **own $100 virtual account** (`data/lab_<name>.db`) with
+Six extra strategies paper-trade at the same time, each in its **own $100 virtual account** (`data/lab_<name>.db`) with
 the same risk engine, fees, slippage and real-candle exits as the main account. They make no AI calls.
 
 | Strategy | Idea |
@@ -140,6 +140,7 @@ the same risk engine, fees, slippage and real-candle exits as the main account. 
 | Breakout with volume | 12h range break with >= 1.5x volume, 1h trend agreeing |
 | Funding-rate extreme | contrarian when funding >= +/-0.05% and 15m momentum turns |
 | Pump fade | short coins up >= 50% in 24h once 15m momentum breaks; stop above the 4h spike high; ~0.5% slippage assumed |
+| Pump Reversal | user's strategy: short coins up >= 150% in 24h once 15m momentum breaks and price is >= 8% off the 4h top; stop 2% above the top; 12% trailing stop that activates once 12% in profit; far 4R target |
 
 Compare them on the dashboard or `GET /api/lab`. Days or weeks of results are needed before any conclusion.
 

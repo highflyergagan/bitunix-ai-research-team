@@ -191,3 +191,33 @@ class AccountTests(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TrailingStopTests(Base):
+    def setUp(self):
+        super().setUp()
+        self.b.s.min_notional = 1.0  # same as the pump lab accounts (wide stops -> small paper positions)
+    def test_short_trailing_stop_locks_profit(self):
+        p = self.b.open_position({"symbol": "JCTUSDT", "bias": "SHORT BIAS", "entry": 100.0, "stop_loss": 120.0,
+                                  "take_profit": 10.0, "trail_pct": 0.12})
+        self.assertAlmostEqual(p["trail_pct"], 0.12)
+        t = p["opened_at"] + 60_000
+        cs = [candle(t, 100, 100, 70, 72),                 # price falls to 70 -> stop trails to 70*1.12 = 78.4
+              candle(t + 60_000, 72, 79, 71, 78)]          # bounce through 78.4 -> trailing stop hit in profit
+        self.clock.t = t + 3 * M1
+        after = self.b.process_candles(p, cs, M1)
+        self.assertEqual(after["status"], "CLOSED")
+        self.assertTrue(after["exit_reason"].startswith("trailing stop"))
+        self.assertGreater(after["net_pnl"], 0)
+
+    def test_trailing_stop_never_loosens(self):
+        p = self.b.open_position({"symbol": "JCTUSDT", "bias": "SHORT BIAS", "entry": 100.0, "stop_loss": 120.0,
+                                  "take_profit": 10.0, "trail_pct": 0.12})
+        t = p["opened_at"] + 60_000
+        self.clock.t = t + 2 * M1
+        after = self.b.process_candles(p, [candle(t, 100, 101, 99, 100)], M1)  # not yet 12% in profit -> trailing not active
+        self.assertEqual(after["stop_loss"], 120.0)
+
+    def test_fixed_stop_positions_unaffected(self):
+        p = self.b.open_position(sig())
+        self.assertIsNone(p["trail_pct"])

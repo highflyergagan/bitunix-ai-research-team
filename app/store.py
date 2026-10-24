@@ -58,6 +58,9 @@ class Store:
             self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=FULL")
         self.conn.executescript(SCHEMA)
+        pcols = {r[1] for r in self.conn.execute("PRAGMA table_info(positions)")}
+        if "trail_pct" not in pcols:  # trailing-stop support (NULL = fixed stop)
+            self.conn.execute("ALTER TABLE positions ADD COLUMN trail_pct REAL")
         cols = {r[1] for r in self.conn.execute("PRAGMA table_info(ai_decisions)")}
         if "provider" not in cols:  # migrate databases created before Grok support
             self.conn.execute("ALTER TABLE ai_decisions ADD COLUMN provider TEXT NOT NULL DEFAULT 'claude'")

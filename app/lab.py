@@ -10,7 +10,8 @@ Strategies
   mean_reversion   fade stretched moves: outside 2-sigma Bollinger band + RSI extreme, 1h trend not against
   breakout_volume  12h range breakout on expanding volume, 1h trend agreeing
   funding_extreme  contrarian when funding shows a crowded side, with 15m momentum turning
-  pump_fade        user's idea: short coins up >= 50% in 24h once 15m momentum breaks (wider slippage)
+  pump_fade        short coins up >= 50% in 24h once 15m momentum breaks (wider slippage)
+  pump_reversal    user's strategy: short coins up >= 150% in 24h once momentum breaks, trailing stop
 """
 from __future__ import annotations
 
@@ -32,6 +33,7 @@ STRATEGIES = {
     "breakout_volume": "Breakout with volume",
     "funding_extreme": "Funding-rate extreme (contrarian)",
     "pump_fade": "Pump fade: short after >=50% pump",
+    "pump_reversal": "Pump Reversal: short >=150% pumps, trailing stop",
 }
 
 
@@ -145,6 +147,29 @@ def pump_fade(sym: str, c15: list[dict], change_24h: float):
                 [f"pumped {change_24h:+.0%} in 24h", "15m close below EMA20", f"{(recent_high / last - 1):.0%} off 4h high"])
 
 
+def pump_reversal(sym: str, c15: list[dict], change_24h: float, trail_pct: float = 0.12):
+    """User's strategy: coin up >= 150% in 24h; short once 15m momentum breaks and price is >= 8% off the 4h top.
+    Stop 2% above the 4h top, then a trailing stop follows price down (only ever tightens). Far target (4R)."""
+    if len(c15) < 30:
+        return None
+    closes = [c["close"] for c in c15]
+    last = closes[-1]
+    e20 = ind.ema(closes, 20)[-1]
+    top = max(c["high"] for c in c15[-16:])
+    if last >= e20 or last > top * 0.92:
+        return None
+    stop = top * 1.02
+    if (stop - last) / last > 0.40:
+        return None
+    tp = last - 4.0 * (stop - last)
+    if tp <= 0:
+        tp = last * 0.05  # effectively "let the trailing stop decide"
+    sig = _sig(sym, SHORT, last, stop, tp, [f"pumped {change_24h:+.0%} in 24h", "15m close below EMA20",
+                                             f"{(1 - last / top):.0%} below 4h top", f"trailing stop {trail_pct:.0%}"])
+    sig["trail_pct"] = trail_pct
+    return sig
+
+
 RULE_FUNCS = {"mean_reversion": mean_reversion, "breakout_volume": breakout_volume, "funding_extreme": funding_extreme}
 
 
@@ -161,8 +186,10 @@ class StrategyLab:
         for key in STRATEGIES:
             st = Store(os.path.join(settings.data_dir, f"lab_{key}.db"))
             cfg = settings
-            if key == "pump_fade":  # pumped coins are thin: assume much worse fills
-                cfg = dataclasses.replace(settings, slippage=0.003, alt_extra_slippage=0.002)
+            if key in ("pump_fade", "pump_reversal"):
+                # pumped coins are thin: assume much worse fills. Wide stops at 0.5% risk give small positions,
+                # so allow paper positions down to $1 notional.
+                cfg = dataclasses.replace(settings, slippage=0.003, alt_extra_slippage=0.002, min_notional=1.0)
             self.brokers[key] = PaperBroker(st, cfg, clock)
 
     # ---------- per scan ----------
@@ -212,20 +239,21 @@ class StrategyLab:
                 sig = RULE_FUNCS[key](sym, m, self.s)
                 if sig:
                     sigs.append(sig)
-        elif key == "pump_fade":
+        elif key in ("pump_fade", "pump_reversal"):
+            threshold = self.pump_threshold if key == "pump_fade" else 1.50
             movers = []
             for x in tickers:
                 try:
                     o, last, vol = float(x.get("open") or 0), float(x.get("lastPrice") or 0), float(x.get("quoteVol") or 0)
                 except (TypeError, ValueError):
                     continue
-                if o > 0 and last > 0 and vol >= 1_000_000 and last / o - 1 >= self.pump_threshold:
+                if o > 0 and last > 0 and vol >= 1_000_000 and last / o - 1 >= threshold:
                     movers.append((last / o - 1, x["symbol"]))
             for chg, sym in sorted(movers, reverse=True)[: self.max_pump_checks]:
                 try:
                     now = self.clock()
                     c15 = [c for c in self.client.klines(sym, "15m", 100) if c["time"] + INTERVAL_MS["15m"] <= now]
-                    sig = pump_fade(sym, c15, chg)
+                    sig = pump_fade(sym, c15, chg) if key == "pump_fade" else pump_reversal(sym, c15, chg)
                     if sig:
                         sigs.append(sig)
                 except Exception:

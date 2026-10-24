@@ -166,10 +166,10 @@ class PaperBroker:
                 raise RiskRejected("max open positions reached")
             cur = st.conn.execute(
                 """INSERT INTO positions(symbol,side,status,qty,signal_price,entry_price,stop_loss,take_profit,risk_usd,
-                   opened_at,last_checked_ms,mark_price,entry_fee,signal_id,ai_decision_id)
-                   VALUES(?,?,'OPEN',?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   opened_at,last_checked_ms,mark_price,entry_fee,signal_id,ai_decision_id,trail_pct)
+                   VALUES(?,?,'OPEN',?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (symbol, side, sz.qty, entry, sz.fill_entry, stop, tp, sz.risk_usd, t, t, sz.fill_entry, entry_fee,
-                 signal_id, ai_decision_id))
+                 signal_id, ai_decision_id, signal.get("trail_pct")))
             pid = cur.lastrowid
         self.store.log("TRADE", f"OPEN {side} {symbol} qty={sz.qty:.6g} @ {sz.fill_entry:.6g} SL={stop} TP={tp} "
                                 f"risk={sz.risk_usd:.3f} USDT R:R={sz.reward_risk:.2f} (paper)", t)
@@ -225,11 +225,29 @@ class PaperBroker:
                 if hit_stop:
                     gapped = c["open"] <= p["stop_loss"] if p["side"] == "LONG" else c["open"] >= p["stop_loss"]
                     price = c["open"] if gapped else p["stop_loss"]
-                    reason = "stop-loss (gap)" if gapped else ("stop-loss" if not hit_tp else "stop-loss (SL+TP same candle, assumed SL)")
+                    trailed = p.get("trail_pct") and ((p["side"] == "SHORT" and p["stop_loss"] < p["entry_price"]) or
+                                                      (p["side"] == "LONG" and p["stop_loss"] > p["entry_price"]))
+                    reason = ("trailing stop" if trailed else "stop-loss") + (" (gap)" if gapped else "")
+                    if hit_tp and not gapped:
+                        reason += " (SL+TP same candle, assumed SL)"
                     return self.close_position(p, price, reason, min(end, t))
                 gapped = c["open"] >= p["take_profit"] if p["side"] == "LONG" else c["open"] <= p["take_profit"]
                 return self.close_position(p, c["open"] if gapped else p["take_profit"], "take-profit", min(end, t))
             mark = c["close"]
+            # trailing stop: activates once price has moved trail_pct in our favour (so it locks >= break-even),
+            # only ever tightens, and only AFTER this candle's stop check (conservative)
+            tr = p.get("trail_pct")
+            if tr:
+                if p["side"] == "SHORT":
+                    cand = c["low"] * (1 + tr)
+                    if c["low"] <= p["entry_price"] * (1 - tr) and cand < p["stop_loss"]:
+                        p = dict(p, stop_loss=cand)
+                        self.store.execute("UPDATE positions SET stop_loss=? WHERE id=?", (cand, p["id"]))
+                else:
+                    cand = c["high"] * (1 - tr)
+                    if c["high"] >= p["entry_price"] * (1 + tr) and cand > p["stop_loss"]:
+                        p = dict(p, stop_loss=cand)
+                        self.store.execute("UPDATE positions SET stop_loss=? WHERE id=?", (cand, p["id"]))
             if end <= t:
                 checked = end  # only advance past fully closed candles
         # time stop

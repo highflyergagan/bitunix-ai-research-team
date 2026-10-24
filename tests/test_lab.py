@@ -107,3 +107,35 @@ class LabIntegrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PumpReversalTests(unittest.TestCase):
+    def series(self, broke=True):
+        c = [{"time": i, "open": 1, "high": 1.0 + i * 0.05, "low": 0.99 + i * 0.05, "close": 1.0 + i * 0.05,
+              "quote_volume": 1} for i in range(40)]
+        if broke:
+            top = c[-1]["close"]
+            c += [{"time": 40 + i, "open": top, "high": top, "low": top * (0.85 - i * 0.01),
+                   "close": top * (0.85 - i * 0.01), "quote_volume": 1} for i in range(3)]
+        return c
+
+    def test_needs_momentum_break(self):
+        self.assertIsNone(L.pump_reversal("P", self.series(broke=False), 2.0))
+
+    def test_signal_has_trailing_stop(self):
+        sig = L.pump_reversal("P", self.series(), 2.0)
+        self.assertIsNotNone(sig)
+        self.assertEqual(sig["bias"], SHORT)
+        self.assertEqual(sig["trail_pct"], 0.12)
+        self.assertGreater(sig["stop_loss"], sig["entry"])
+
+    def test_only_coins_up_150pct_considered(self):
+        s = settings()
+        clock = Clock()
+        lab = L.StrategyLab(s, FakeClient(clock), lambda *a: [], clock)
+        tick = [{"symbol": "AUSDT", "open": "1", "lastPrice": "2.2", "quoteVol": "5000000"},   # +120% -> fade only
+                {"symbol": "BUSDT", "open": "1", "lastPrice": "2.6", "quoteVol": "5000000"}]   # +160% -> both
+        asked = []
+        lab.client.klines = lambda sym, *a, **k: asked.append(sym) or []
+        list(lab._signals("pump_reversal", {}, tick))
+        self.assertEqual(asked, ["BUSDT"])
