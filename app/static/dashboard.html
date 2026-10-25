@@ -96,6 +96,15 @@ svg{width:100%;height:90px;display:block}
 
   <section class="card"><h2>Strategy Lab: each strategy has its own $100 paper account</h2><div class="tbl" id="lab"></div><p class="muted" style="font-size:12px">Lab strategies are rule-only (no AI). Same risk rules, fees and slippage as the main account. Pump strategies assume ~0.5% slippage per fill and allow positions down to $1 (wide stops at 0.5% risk).</p></section>
 
+  <section class="card"><h2>100% Pump Exhaustion SHORT Agent (own $100 paper ledger)</h2>
+    <div id="paStatus" class="muted" style="margin-bottom:6px">Loading…</div>
+    <div class="row" style="margin-bottom:8px"><button onclick="runBacktest()">Run walk-forward backtest</button></div>
+    <h3 style="font-size:13px;margin:8px 0 4px">Latest evaluations (SHORT / NO TRADE with reasons)</h3><div class="tbl" id="paEvals"></div>
+    <h3 style="font-size:13px;margin:10px 0 4px">Agent paper trades</h3><div class="tbl" id="paTrades"></div>
+    <h3 style="font-size:13px;margin:10px 0 4px">Backtest: thresholds × strategies (in-sample / out-of-sample)</h3><div class="tbl" id="paBt"></div>
+    <div id="paWf" class="muted" style="font-size:12px;margin-top:6px"></div>
+  </section>
+
   <section class="card"><h2>AI Research Committee</h2><div id="committee"><p class="muted">Loading…</p></div></section>
 
   <section class="card"><h2>Study mode: pump &amp; dump watch (no trades)</h2><div id="studySum" class="muted" style="margin-bottom:6px"></div><div class="tbl" id="study"></div></section>
@@ -134,6 +143,31 @@ function logout() { TOKEN = ''; try { sessionStorage.removeItem('desk_token'); }
 function show(on) { $('app').classList.toggle('hidden', !on); $('login').classList.toggle('hidden', on); }
 async function post(path) { try { await api(path, {method: 'POST'}); } catch (e) { alertBox(e.message); } refresh(); }
 function alertBox(m) { $('halted').textContent = m; }
+async function runBacktest() { try { const r = await api('pump-agent/backtest', {method: 'POST'}); alertBox(r.started ? 'Backtest started (takes ~20-40 min; progress shows in the Pump agent card).' : (r.reason || 'not started')); } catch (e) { alertBox(e.message); } refresh(); }
+async function loadPumpAgent() {
+  let pa; try { pa = await api('pump-agent?limit=30'); } catch (e) { return; }
+  if (!pa || !pa.enabled) { $('paStatus').textContent = 'Agent disabled (PUMP_AGENT_ENABLED=false).'; return; }
+  const v = pa.validation || {}, bs = pa.backtest || {}, a = pa.account || {};
+  const bst = bs.state === 'running' ? ` · backtest running: ${bs.done || 0}/${bs.total || '?'} coins, ${bs.pump_windows || 0} pump windows`
+            : bs.state === 'failed' ? ` · backtest FAILED: ${esc(bs.error)}` : bs.state === 'done' ? ` · backtest finished ${t(bs.finished_at)}` : ' · backtest not run yet';
+  $('paStatus').innerHTML = `Threshold <b>+${num(pa.threshold * 100, 0)}%</b> in 24h · execution: <b class="${v.validated ? 'up' : 'warn'}">${esc(pa.execution)}</b>`
+    + ` (${esc(v.reason || '')})${bst}<br>Ledger equity <b>${num(a.equity, 2)}</b> USDT · closed ${a.closed_trades} · open ${a.open_positions}`
+    + ` · evaluations ${pa.totals.evaluations}, SHORT signals ${pa.totals.short_signals}, executed ${pa.totals.executed}`;
+  $('paEvals').innerHTML = table([['Time', r => t(r.ts)], ['Coin', r => esc(r.symbol)], ['24h', r => `<span class="up">+${num(r.change_24h * 100, 0)}%</span>`],
+    ['Signal', r => pill(r.decision === 'SHORT' ? 'SHORT' : 'NO TRADE')], ['Action', r => esc(r.action), 1],
+    ['Why', r => esc((r.decision === 'SHORT' ? r.reasons : (r.blockers || []).concat(r.reasons || [])).join(' · ')), 1]], pa.evaluations || []);
+  $('paTrades').innerHTML = table([['Coin', r => esc(r.symbol)], ['Status', r => esc(r.status)], ['Entry', r => px(r.entry_price)], ['Stop', r => px(r.stop_loss)],
+    ['Target', r => px(r.take_profit)], ['Net P&L', r => r.net_pnl == null ? '—' : `<span class="${cls(r.net_pnl)}">${num(r.net_pnl, 4)}</span>`], ['Reason', r => esc(r.exit_reason || '')]],
+    (pa.open_positions || []).concat(pa.closed_positions || []));
+  const br = pa.backtest_result;
+  if (br && br.table) {
+    const m = x => x.trades ? `${x.trades} tr · ${num(x.expectancy_r, 2)}R · PF ${x.profit_factor == null ? '—' : num(x.profit_factor, 2)} · DD ${num(x.max_drawdown_pct, 1)}%` : '0 trades';
+    $('paBt').innerHTML = table([['Strategy', r => esc(r.name)], ['Pump ≥', r => '+' + r.threshold_pct + '%'], ['All', r => m(r.all), 1], ['In-sample', r => m(r.in_sample), 1], ['Out-of-sample', r => m(r.out_of_sample), 1]], br.table);
+    const wf = br.walk_forward || {};
+    $('paWf').innerHTML = `Walk-forward (threshold picked on past data, tested on the next period): ` + Object.keys(wf).map(k => `${esc(k)}: ${m(wf[k].out_of_sample)} (picked ${wf[k].thresholds_chosen_pct.map(x => '+' + x + '%').join(', ')})`).join(' | ')
+      + `<br>${br.symbols} coins, ${br.pump_windows} pump windows, ${br.period.days} days. Costs: 0.5% slippage per fill, 0.06% fee per side, shorts pay 0.05% funding per 8h. Known biases: ${esc(br.biases.join('; '))}.`;
+  } else { $('paBt').innerHTML = '<p class="muted">No backtest yet. Press "Run walk-forward backtest".</p>'; }
+}
 async function startExperiment() {
   if (!confirm('Start a 24-hour paper-trading test now? (Automation will start.)')) return;
   await post('experiment/start?hours=24');
@@ -157,6 +191,7 @@ function spark(points) {
 async function refresh() {
   if (!TOKEN) return;
   let st;
+  loadPumpAgent();
   try { st = await api('status'); } catch (e) { logout(); $('loginErr').textContent = e.message; return; }
   const [pos, sig, ai, sc, ev, eq, stu, com, lab] = await Promise.all([api('positions'), api('signals?limit=80'), api('ai-decisions?limit=30'), api('scans?limit=12'), api('events?limit=40'), api('equity?limit=600'), api('study?limit=40'), api('committee?limit=6'), api('lab')].map(p => p.catch(() => null)));
   const a = st.account;

@@ -50,6 +50,25 @@ def _study_brief(store: Store, w) -> dict:
     return {"note": "research only, no trades", **{r["kind"].lower() + "_events": r["n"] for r in rows}}
 
 
+def _pump_agent_brief(settings, w) -> dict:
+    import os
+    from .paper import PaperBroker
+    path = os.path.join(settings.data_dir, "agent_pump_exhaustion.db")
+    if not os.path.exists(path):
+        return {"enabled": False}
+    st = Store(path)
+    try:
+        r = st.one("SELECT COUNT(*) n, SUM(decision='SHORT') shorts, SUM(action='executed (paper)') ex FROM pump_evaluations "
+                   "WHERE ts BETWEEN ? AND ?", w)
+    except Exception:
+        r = {"n": 0, "shorts": 0, "ex": 0}
+    a = PaperBroker(st, settings).account()
+    val = st.get("validation") or {"validated": False, "reason": "backtest not run"}
+    return {"evaluations": r["n"] or 0, "short_signals": r["shorts"] or 0, "executed": r["ex"] or 0,
+            "validated": val.get("validated"), "validation_reason": val.get("reason"),
+            "ledger_equity": a["equity"], "closed_trades": a["closed_trades"], "open_now": a["open_positions"]}
+
+
 def start_experiment(store: Store, equity: float, hours: float = 24.0, clock=now_ms) -> dict:
     t = clock()
     exp = {"started_at": t, "planned_end_at": t + int(hours * 3_600_000), "hours": hours, "starting_equity": equity}
@@ -122,6 +141,7 @@ def build_report(store: Store, settings: Settings, clock=now_ms) -> dict:
         "research_committee": _committee_brief(store, w),
         "strategy_lab": _lab_brief(settings),
         "study_mode": _study_brief(store, w),
+        "pump_exhaustion_agent": _pump_agent_brief(settings, w),
         "errors_and_warnings": [{"ts": _iso(e["ts"]), "level": e["level"], "message": e["message"][:400]} for e in errs],
         "limitations": [
             "News, token unlocks, exchange listings and open interest have no verified data source; they are reported as unavailable, not assumed neutral.",

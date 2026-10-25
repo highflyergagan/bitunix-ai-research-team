@@ -168,6 +168,19 @@ def create_app(settings: Settings | None = None, client=None, start_scheduler: b
             return {"mode": "disabled"}
         return scanner.study.summary(min(limit, 500))
 
+    @app.get("/api/pump-agent", dependencies=[Depends(auth)])
+    def pump_agent(limit: int = 40):
+        if not scanner.pump_agent:
+            return {"enabled": False}
+        return {"enabled": True, **scanner.pump_agent.summary(min(limit, 200))}
+
+    @app.post("/api/pump-agent/backtest", dependencies=[Depends(auth)])
+    def pump_agent_backtest():
+        if not scanner.pump_agent:
+            raise HTTPException(400, "pump agent disabled")
+        from .pump_backtest import start_background
+        return start_background(s, scanner.pump_agent.store)
+
     @app.post("/api/ai/selftest", dependencies=[Depends(auth)])
     def ai_selftest():
         return scanner.reviewer.selftest()

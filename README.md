@@ -149,6 +149,33 @@ Compare them on the dashboard or `GET /api/lab`. Days or weeks of results are ne
 Every scan also records coins that moved +/-30% in 24h (min $200k volume) and follows them for 24h, including a
 hypothetical "short after pump" result (before fees). No trades are ever placed from study data. See `/api/study`.
 
+## 100% Pump Exhaustion SHORT Agent (paper, own $100 ledger)
+
+Runs inside every scan, after the lab. It never touches the main account or the lab accounts.
+
+1. **Candidates:** Bitunix USDT perpetuals up >= 100% over the rolling 24h ticker window (`PUMP_AGENT_THRESHOLD`).
+2. **Data checks:** the contract must be listed, the 15m history fresh and gap-free, 24h volume >= `MIN_QUOTE_VOLUME`, spread <= 0.30% and top-5 bids >= $10k (public order book), and the funding rate must be available.
+3. **Evidence:** abnormal volume, volume fading after the top, RSI bearish divergence, liquidity sweep or failed breakout, lower highs, and a bearish structure shift.
+4. **Mandatory confirmation:** a 15m close below a swing low (breakdown), then the latest closed candle retests that level and fails. At least 2 exhaustion signs are also required.
+5. **Squeeze blocks:** funding <= -0.10% per 8h, price within 5% of the top, or a > 8% rise in the last hour.
+6. **Levels:** stop = latest swing high + 0.5 ATR (rejected if more than 25% away). The target must give >= 2:1 *after* 0.5% slippage per fill and 0.06% fees, and it may not sit below the pre-pump price. Risk is 0.5% of ledger equity.
+7. **Execution gate:** a SHORT signal executes only if *all* of these pass, in order:
+   - the walk-forward backtest validated the strategy
+   - the Risk Agent pre-checks pass
+   - the AI Research Committee approves (Claude departments, then the Grok independent review, then the Chief)
+   - the risk engine re-checks at entry
+
+   Until the strategy is validated, the agent runs in **shadow mode**: it stores every SHORT / NO TRADE decision with reasons, executes nothing and spends no AI budget.
+
+**Backtest** (dashboard button, `POST /api/pump-agent/backtest`, or `python -m app.pump_backtest`):
+- **Data:** 4h candles screen every listed coin for pumps over `PUMP_BACKTEST_DAYS`. 15m candles are then fetched around each pump.
+- **Rules:** the same live functions, tested at +50 / 75 / 100 / 150 / 200% thresholds, against the existing Pump fade and Pump Reversal rules.
+- **Fills:** entry at the next candle's open. Costs are 0.5% slippage per fill, 0.06% fees, and shorts pay 0.05% funding per 8h.
+- **Validation:** results are split into in-sample (first 60%) and out-of-sample (last 40%), plus an anchored walk-forward.
+- **Pass criteria:** out-of-sample >= 20 trades, expectancy >= +0.10R, profit factor >= 1.3, max drawdown <= 5%, and walk-forward expectancy > 0.
+
+Known biases: delisted coins are missing (survivorship), there is no historical order book or funding history, and the portfolio limit is not simulated. The news and catalyst analysts report `no_data` because no verified news feed is connected.
+
 ## Claude API cost
 
 Each review is about 1–1.5k input tokens and under 150 output tokens. That's roughly $0.0002 per call at Haiku 5.5 list prices ($0.10 / $0.50 per million tokens). The defaults cap usage at 40 calls and $0.50 per day. Claude is called only for candidates that already passed the rules, so on most scans it is not called at all. Update the `CLAUDE_*_USD_PER_MTOK` variables if pricing changes.

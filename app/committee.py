@@ -115,7 +115,8 @@ CHIEF_SCHEMA = {
 
 
 def _market_data(signal: dict) -> dict:
-    return {"symbol": signal["symbol"], "proposed_trade": signal["bias"], "entry": signal["entry"],
+    extra = {"strategy_context": signal["review_context"]} if signal.get("review_context") else {}
+    return {**extra, "symbol": signal["symbol"], "proposed_trade": signal["bias"], "entry": signal["entry"],
             "stop_loss": signal["stop_loss"], "take_profit": signal["take_profit"],
             "rule_engine_reasons": signal["reasons"], "indicators": signal["indicators"],
             "unavailable_data": signal["data_gaps"]}

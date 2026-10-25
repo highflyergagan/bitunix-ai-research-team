@@ -129,6 +129,12 @@ class Settings:
     study_enabled: bool = True
     study_min_change: float = 0.30  # +/-30% in 24h
     study_min_volume: float = 200_000.0
+    # 100% Pump Exhaustion SHORT Agent (separate paper ledger; executes only after walk-forward validation)
+    pump_agent_enabled: bool = True
+    pump_agent_threshold: float = 1.0  # +100% in 24h
+    pump_agent_max_checks: int = 5
+    pump_agent_ai_review: bool = True
+    pump_backtest_days: int = 180
     # App
     dashboard_token: str = field(default="", repr=False)
     data_dir: str = "data"
@@ -183,6 +189,10 @@ class Settings:
         s.study_enabled = _b("STUDY_ENABLED", s.study_enabled)
         s.study_min_change = max(0.05, _f("STUDY_MIN_CHANGE", s.study_min_change))
         s.study_min_volume = _f("STUDY_MIN_VOLUME", s.study_min_volume)
+        s.pump_agent_enabled = _b("PUMP_AGENT_ENABLED", s.pump_agent_enabled)
+        s.pump_agent_threshold = max(0.5, _f("PUMP_AGENT_THRESHOLD", s.pump_agent_threshold))
+        s.pump_agent_max_checks = max(1, min(_i("PUMP_AGENT_MAX_CHECKS", s.pump_agent_max_checks), 10))
+        s.pump_backtest_days = max(30, min(_i("PUMP_BACKTEST_DAYS", s.pump_backtest_days), 365))
         s.dashboard_token = os.getenv("DASHBOARD_TOKEN", "")
         s.data_dir = os.getenv("DATA_DIR", s.data_dir)
         return s

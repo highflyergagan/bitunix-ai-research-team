@@ -17,6 +17,7 @@ ALLOWED_PATHS = frozenset(
         "/api/v1/futures/market/tickers",
         "/api/v1/futures/market/kline",
         "/api/v1/futures/market/funding_rate",
+        "/api/v1/futures/market/depth",
     }
 )
 
@@ -87,6 +88,13 @@ class BitunixPublicClient:
         # de-duplicate by open time
         dedup: dict[int, dict] = {c["time"]: c for c in out}
         return [dedup[k] for k in sorted(dedup)]
+
+    def depth(self, symbol: str, limit: int = 5) -> dict | None:
+        """Public order book (read-only): {"bids": [[price, qty], ...], "asks": [...]}. None if unavailable."""
+        try:
+            return self._get("/api/v1/futures/market/depth", {"symbol": symbol, "limit": limit})
+        except MarketDataError:
+            return None
 
     def funding_rate(self, symbol: str) -> float | None:
         """Current funding rate as a fraction (0.0001 = 0.01%). None if unavailable."""

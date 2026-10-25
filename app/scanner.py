@@ -24,6 +24,7 @@ from .store import Store, now_ms
 from .strategy import LONG, SHORT, generate_signal
 from .study import StudyMode
 from .lab import StrategyLab
+from .pump_agent import PumpExhaustionAgent
 
 log = logging.getLogger("scanner")
 
@@ -39,6 +40,8 @@ class Scanner:
                                      else ReviewPanel(store, settings, clock))
         self.lab = (StrategyLab(settings, self.client, self._candles_since, clock, settings.lab_pump_threshold)
                     if settings.lab_enabled else None)
+        self.pump_agent = (PumpExhaustionAgent(settings, self.client, self.reviewer, self._candles_since, store, clock)
+                           if settings.pump_agent_enabled else None)
         self.study = StudyMode(store, settings.study_min_change, settings.study_min_volume, clock) if settings.study_enabled else None
         self._scan_lock = threading.Lock()
         self._stop = threading.Event()
@@ -196,6 +199,17 @@ class Scanner:
                         self.store.log("LAB", f"{k}: opened {v['opened']}, closed {v['closed']} (paper)")
             except Exception as exc:
                 errors.append(f"strategy lab: {exc}")
+
+        # 6. 100% Pump Exhaustion SHORT Agent (own paper ledger) -- must never break the main scan
+        if self.pump_agent:
+            try:
+                prices = {k: v["price"] for k, v in by_sym.items() if v["price"] > 0}
+                pa = self.pump_agent.run(tick, prices)
+                stats["pump_agent"] = {k: pa[k] for k in ("evaluated", "signals", "opened", "closed")}
+                if pa["errors"]:
+                    errors.append("pump agent: " + "; ".join(pa["errors"])[:300])
+            except Exception as exc:
+                errors.append(f"pump agent: {exc}")
 
         self.broker.roll_day_and_limits()
         self.broker.record_equity()
