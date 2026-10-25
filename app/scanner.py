@@ -47,6 +47,7 @@ class Scanner:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.next_scan_at: int | None = None
+        self.suspended: dict[str, int] = {}  # symbol -> until (ms); Bitunix error 20015 = contract not tradable
 
     # ---------- automation control ----------
     @property
@@ -130,9 +131,11 @@ class Scanner:
                                        "quote_volume": float(x.get("quoteVol") or 0)}
             except (KeyError, TypeError, ValueError):
                 continue
-        ranked = sorted((s for s in by_sym if s.endswith("USDT") and by_sym[s]["price"] > 0),
+        now0 = self.clock()
+        self.suspended = {k: v for k, v in self.suspended.items() if v > now0}
+        ranked = sorted((s for s in by_sym if s.endswith("USDT") and by_sym[s]["price"] > 0 and s not in self.suspended),
                         key=lambda s: by_sym[s]["quote_volume"], reverse=True)
-        universe = list(dict.fromkeys([f for f in self.s.favorites if f in by_sym] + ranked[: self.s.universe_top_n]))
+        universe = list(dict.fromkeys([f for f in self.s.favorites if f in by_sym and f not in self.suspended] + ranked[: self.s.universe_top_n]))
 
         # update marks for open positions from tickers
         for p in self.broker.open_positions():
@@ -164,7 +167,11 @@ class Scanner:
                     stats["signals"] += 1
                     candidates.append((sig, sid))
             except Exception as exc:
-                errors.append(f"{sym}: {exc}")
+                if "20015" in str(exc):  # suspended contract: skip it for 24h instead of failing every scan
+                    self.suspended[sym] = self.clock() + 86_400_000
+                    self.store.log("INFO", f"{sym} is not tradable on Bitunix (error 20015); skipped for 24h")
+                else:
+                    errors.append(f"{sym}: {exc}")
 
         # 4. candidates -> risk -> Claude -> risk -> paper entry
         candidates.sort(key=lambda x: x[0]["score"], reverse=True)

@@ -291,3 +291,30 @@ class ScannerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SuspendedSymbolTests(unittest.TestCase):
+    def test_suspended_contract_skipped_not_failing(self):
+        from app.bitunix import MarketDataError
+        from app.scanner import Scanner
+        from app.store import Store
+        from tests.helpers import Clock, FakeClient, settings
+        s = settings()
+        clock = Clock()
+        fc = FakeClient(clock)
+        orig = fc.klines
+
+        def kl(symbol, *a, **k):
+            if symbol == "ETHUSDT":
+                raise MarketDataError("/api/v1/futures/market/kline failed: Bitunix error 20015: this Futures is not allowed to trade.")
+            return orig(symbol, *a, **k)
+        tick = fc.tickers()  # real fake tickers, built before the failure is injected
+        fc.tickers = lambda: tick
+        fc.klines = kl
+        sc = Scanner(Store(s.db_path), s, client=fc, clock=clock)
+        r1 = sc.scan_once()
+        self.assertEqual(r1["status"], "ok", r1["errors"])
+        self.assertIn("ETHUSDT", sc.suspended)
+        r2 = sc.scan_once()
+        self.assertEqual(r2["status"], "ok")
+        self.assertEqual(r2["symbols_scanned"], 2)  # ETH no longer in the universe
