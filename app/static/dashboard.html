@@ -105,6 +105,14 @@ svg{width:100%;height:90px;display:block}
     <div id="paWf" class="muted" style="font-size:12px;margin-top:6px"></div>
   </section>
 
+  <section class="card"><h2>Strategy comparison (research only, nothing is activated)</h2>
+    <div id="cmpStatus" class="muted" style="margin-bottom:6px">Loading…</div>
+    <div class="row" style="margin-bottom:8px"><button onclick="runCompare()">Run strategy comparison</button></div>
+    <div class="tbl" id="cmpTable"></div>
+    <div id="cmpAi" class="muted" style="font-size:12px;margin-top:6px"></div>
+    <div class="tbl" id="cmpFund" style="margin-top:6px"></div>
+  </section>
+
   <section class="card"><h2>AI Research Committee</h2><div id="committee"><p class="muted">Loading…</p></div></section>
 
   <section class="card"><h2>Study mode: pump &amp; dump watch (no trades)</h2><div id="studySum" class="muted" style="margin-bottom:6px"></div><div class="tbl" id="study"></div></section>
@@ -144,6 +152,22 @@ function show(on) { $('app').classList.toggle('hidden', !on); $('login').classLi
 async function post(path) { try { await api(path, {method: 'POST'}); } catch (e) { alertBox(e.message); } refresh(); }
 function alertBox(m) { $('halted').textContent = m; }
 async function runBacktest() { try { const r = await api('pump-agent/backtest', {method: 'POST'}); alertBox(r.started ? 'Backtest started (takes ~20-40 min; progress shows in the Pump agent card).' : (r.reason || 'not started')); } catch (e) { alertBox(e.message); } refresh(); }
+async function runCompare() { try { const r = await api('research/compare', {method: 'POST'}); alertBox(r.started ? 'Strategy comparison started (~10-20 min).' : (r.reason || 'not started')); } catch (e) { alertBox(e.message); } refresh(); }
+async function loadCompare() {
+  let c; try { c = await api('research/compare'); } catch (e) { return; }
+  const st = c.status || {}, r = c.result;
+  $('cmpStatus').innerHTML = st.state === 'running' ? `Running: ${esc(st.phase)} ${st.done || 0}/${st.total || '?'}` : st.state === 'failed' ? `<span class="down">Failed: ${esc(st.error)}</span>`
+    : r ? `<b class="${/NO strategy/.test(r.headline) ? 'down' : 'up'}">${esc(r.headline)}</b><br>Generated ${t(r.generated_at)} · ${r.period.days} days · out-of-sample = last 40%. ${esc(r.ranking_rule)}` : 'Not run yet.';
+  if (!r) return;
+  const m = x => x && x.trades ? `${x.trades} tr · <span class="${cls(x.expectancy_r)}">${num(x.expectancy_r, 3)}R</span> · PF ${x.profit_factor == null ? '—' : num(x.profit_factor, 2)} · DD ${num(x.max_drawdown_pct, 1)}%` : '0 trades';
+  $('cmpTable').innerHTML = table([['#', x => x.rank || '—'], ['Strategy', x => esc(x.name)], ['Out-of-sample', x => x.backtested ? m(x.out_of_sample) : esc(x.status), 1],
+    ['In-sample', x => x.backtested ? m(x.in_sample) : '—', 1], ['Data quality', x => x.data_quality ? `${esc(x.data_quality.grade)} (${x.data_quality.score})` : 'n/a'],
+    ['Profitable?', x => x.backtested ? (x.profitable_out_of_sample ? '<span class="up">yes</span>' : '<span class="down">no</span>') : 'not testable']], r.strategies);
+  const a = r.ai_vs_deterministic || {};
+  $('cmpAi').innerHTML = `<b>AI-assisted vs deterministic</b> (setups judged in the live paper run, replayed on real later candles): AI-approved ${m(a.ai_approved)} · AI-rejected (what would have happened) ${m(a.ai_rejected_counterfactual)} · take-all baseline ${m(a.deterministic_take_all)} · ${a.setups_judged || 0} setups.`;
+  const fb = r.strategies.find(x => x.key === 'funding_basis');
+  if (fb && fb.snapshot) $('cmpFund').innerHTML = '<p class="muted" style="font-size:12px">Funding/basis (research only, not backtestable): current snapshot</p>' + table([['Coin', x => esc(x.symbol)], ['Funding/8h', x => num(x.funding_8h_pct, 4) + '%'], ['Annualised if constant', x => num(x.annualised_if_constant_pct, 1) + '%'], ['Round-trip cost', x => num(x.round_trip_cost_pct, 2) + '%'], ['Settlements to break even', x => num(x.settlements_to_break_even, 1)]], fb.snapshot);
+}
 async function loadPumpAgent() {
   let pa; try { pa = await api('pump-agent?limit=30'); } catch (e) { return; }
   if (!pa || !pa.enabled) { $('paStatus').textContent = 'Agent disabled (PUMP_AGENT_ENABLED=false).'; return; }
@@ -191,7 +215,7 @@ function spark(points) {
 async function refresh() {
   if (!TOKEN) return;
   let st;
-  loadPumpAgent();
+  loadPumpAgent(); loadCompare();
   try { st = await api('status'); } catch (e) { logout(); $('loginErr').textContent = e.message; return; }
   const [pos, sig, ai, sc, ev, eq, stu, com, lab] = await Promise.all([api('positions'), api('signals?limit=80'), api('ai-decisions?limit=30'), api('scans?limit=12'), api('events?limit=40'), api('equity?limit=600'), api('study?limit=40'), api('committee?limit=6'), api('lab')].map(p => p.catch(() => null)));
   const a = st.account;

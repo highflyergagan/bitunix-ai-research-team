@@ -181,6 +181,17 @@ def create_app(settings: Settings | None = None, client=None, start_scheduler: b
         from .pump_backtest import start_background
         return start_background(s, scanner.pump_agent.store)
 
+    compare_store = Store(os.path.join(s.data_dir, "strategy_compare.db"))
+
+    @app.get("/api/research/compare", dependencies=[Depends(auth)])
+    def research_compare():
+        return {"status": compare_store.get("compare_status"), "result": compare_store.get("compare_result")}
+
+    @app.post("/api/research/compare", dependencies=[Depends(auth)])
+    def research_compare_start():
+        from .strategy_compare import start_background
+        return start_background(s, store, scanner.pump_agent.store if scanner.pump_agent else None, compare_store)
+
     @app.post("/api/ai/selftest", dependencies=[Depends(auth)])
     def ai_selftest():
         return scanner.reviewer.selftest()

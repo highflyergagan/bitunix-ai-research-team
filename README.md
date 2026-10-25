@@ -176,6 +176,21 @@ Runs inside every scan, after the lab. It never touches the main account or the 
 
 Known biases: delisted coins are missing (survivorship), there is no historical order book or funding history, and the portfolio limit is not simulated. The news and catalyst analysts report `no_data` because no verified news feed is connected.
 
+## Strategy comparison (research only)
+
+The dashboard button, `POST /api/research/compare` or `python -m app.strategy_compare` compares four strategies on Bitunix public data. It needs no paid service and changes nothing.
+
+1. **Pump Exhaustion SHORT** uses the pump agent's walk-forward backtest.
+2. **Liquidity Sweep Reversal** is a new deterministic rule.
+3. **Trend Following** is the main account's own signal engine, without AI.
+4. **Funding/Basis Arbitrage** is a current snapshot versus round-trip costs only. It cannot be backtested: there is no historical funding data and no spot data on the public allow-list.
+
+Strategies 2 and 3 run over 120 days of 15m candles for the most liquid USDT perpetuals. Costs are fees, slippage and a constant funding charge. The out-of-sample period is the last 40%.
+
+**AI vs deterministic:** every setup the AI committee actually judged in the paper run is replayed on the real candles that followed. This compares AI-approved setups, AI-rejected setups and a take-all deterministic baseline. AI is never re-run on history, because that costs money and the models may have seen how prices moved.
+
+**Ranking:** out-of-sample expectancy (R), then profit factor, drawdown, trade count and data quality. The report says so plainly if no strategy is profitable.
+
 ## Claude API cost
 
 Each review is about 1–1.5k input tokens and under 150 output tokens. That's roughly $0.0002 per call at Haiku 5.5 list prices ($0.10 / $0.50 per million tokens). The defaults cap usage at 40 calls and $0.50 per day. Claude is called only for candidates that already passed the rules, so on most scans it is not called at all. Update the `CLAUDE_*_USD_PER_MTOK` variables if pricing changes.
