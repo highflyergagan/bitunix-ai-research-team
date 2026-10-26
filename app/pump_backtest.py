@@ -111,7 +111,8 @@ def _settlements(a: int, b: int) -> int:
     return max(0, b // 28_800_000 - a // 28_800_000)
 
 
-def simulate(sym: str, c15: list[dict], sigs: list, threshold: float) -> list[dict]:
+def simulate(sym: str, c15: list[dict], sigs: list, threshold: float, slip: float = SLIP, max_bars: int = 96) -> list[dict]:
+    SLIP_ = slip
     trades, busy_until = [], -1
     for i, chg, sig in sigs:
         if chg < threshold or i <= busy_until:
@@ -122,13 +123,13 @@ def simulate(sym: str, c15: list[dict], sigs: list, threshold: float) -> list[di
         ep, stop, tp = c15[e]["open"], sig["stop_loss"], sig["take_profit"]
         if not (tp < ep < stop):
             continue  # price already beyond a level at the next open -> no entry
-        fe = ep * (1 - SLIP)
-        sf = stop * (1 + SLIP)
+        fe = ep * (1 - SLIP_)
+        sf = stop * (1 + SLIP_)
         risk_unit = sf - fe + FEE * (fe + sf)
         trail = sig.get("trail_pct")
         px = reason = None
         j = e
-        last_j = min(e + 95, len(c15) - 1)
+        last_j = min(e + max_bars - 1, len(c15) - 1)
         for j in range(e, last_j + 1):
             c = c15[j]
             if c["high"] >= stop:
@@ -143,10 +144,10 @@ def simulate(sym: str, c15: list[dict], sigs: list, threshold: float) -> list[di
             if trail and c["low"] <= ep * (1 - trail):
                 stop = min(stop, c["low"] * (1 + trail))
         if px is None:
-            if last_j < e + 95:
+            if last_j < e + max_bars - 1:
                 continue  # data ends before the trade could finish -> excluded, not guessed
             px, reason = c15[last_j]["close"], "24h time stop"
-        xf = px * (1 + SLIP)
+        xf = px * (1 + SLIP_)
         exit_t = c15[j]["time"] + M15
         funding = FUNDING_8H * ep * _settlements(c15[e]["time"], exit_t)
         pnl = fe - xf - FEE * (fe + xf) - funding
