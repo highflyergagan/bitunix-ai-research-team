@@ -181,6 +181,25 @@ def create_app(settings: Settings | None = None, client=None, start_scheduler: b
         from .pump_backtest import start_background
         return start_background(s, scanner.pump_agent.store)
 
+    from .journal import Journal
+    journal = Journal(s.data_dir)
+
+    @app.get("/api/journal", dependencies=[Depends(auth)])
+    def journal_list():
+        return journal.summary()
+
+    @app.post("/api/journal", dependencies=[Depends(auth)])
+    def journal_add(entry: dict = Body(...)):
+        allowed = {"symbol", "side", "pnl", "closed_at", "leverage", "pump_pct", "entry", "exit", "qty", "fee", "setup", "notes"}
+        try:
+            return {"added": journal.add(**{k: v for k, v in entry.items() if k in allowed and v not in ("", None)})}
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, str(exc))
+
+    @app.delete("/api/journal/{rid}", dependencies=[Depends(auth)])
+    def journal_delete(rid: int):
+        return {"deleted": journal.delete(rid)}
+
     @app.get("/api/manual", dependencies=[Depends(auth)])
     def manual_summary():
         return scanner.manual.summary()

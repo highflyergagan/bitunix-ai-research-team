@@ -96,6 +96,26 @@ svg{width:100%;height:90px;display:block}
 
   <section class="card"><h2>Strategy Lab: each strategy has its own $100 paper account</h2><div class="tbl" id="lab"></div><p class="muted" style="font-size:12px">Lab strategies are rule-only (no AI). Same risk rules, fees and slippage as the main account. Pump strategies assume ~0.5% slippage per fill and allow positions down to $1 (wide stops at 0.5% risk).</p></section>
 
+  <section class="card"><h2>My real trades (journal, record only)</h2>
+    <div id="jStats" class="muted" style="margin-bottom:6px"></div>
+    <div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:8px">
+      <input id="jSym" placeholder="Symbol e.g. CAPUSDT" aria-label="Journal symbol">
+      <select id="jSide" aria-label="Journal side"><option>SHORT</option><option>LONG</option></select>
+      <input id="jPnl" placeholder="Realized P&amp;L (USDT)" aria-label="Realized PnL" inputmode="decimal">
+      <input id="jFee" placeholder="Fee" aria-label="Fee" inputmode="decimal">
+      <input id="jExit" placeholder="Exit price" aria-label="Exit price" inputmode="decimal">
+      <input id="jQty" placeholder="Quantity" aria-label="Quantity" inputmode="decimal">
+      <input id="jLev" placeholder="Leverage" aria-label="Leverage" inputmode="decimal">
+      <input id="jPump" placeholder="24h pump % at entry" aria-label="Pump percent" inputmode="decimal">
+      <input id="jWhen" placeholder="Closed (date time)" aria-label="Closed time">
+      <input id="jSetup" placeholder="Setup e.g. Pump Reversal" aria-label="Setup">
+      <input id="jNotes" placeholder="Notes" aria-label="Notes">
+      <button onclick="journalAdd()">Add trade</button>
+    </div>
+    <div id="jMsg" class="muted" style="font-size:12px"></div>
+    <div class="tbl" id="jTrades"></div>
+  </section>
+
   <section class="card"><h2>Manual paper trades (your ideas, own $100 paper ledger)</h2>
     <div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:8px">
       <input id="mSym" placeholder="Symbol e.g. CAPUSDT" aria-label="Symbol">
@@ -165,6 +185,22 @@ function show(on) { $('app').classList.toggle('hidden', !on); $('login').classLi
 async function post(path) { try { await api(path, {method: 'POST'}); } catch (e) { alertBox(e.message); } refresh(); }
 function alertBox(m) { $('halted').textContent = m; }
 async function runBacktest() { try { const r = await api('pump-agent/backtest', {method: 'POST'}); alertBox(r.started ? 'Backtest started (takes ~20-40 min; progress shows in the Pump agent card).' : (r.reason || 'not started')); } catch (e) { alertBox(e.message); } refresh(); }
+async function journalAdd() {
+  const n = id => { const v = parseFloat($(id).value); return isNaN(v) ? null : v; };
+  const body = {symbol: $('jSym').value, side: $('jSide').value, pnl: n('jPnl'), fee: n('jFee'), exit: n('jExit'), qty: n('jQty'),
+                leverage: n('jLev'), pump_pct: n('jPump'), closed_at: $('jWhen').value, setup: $('jSetup').value, notes: $('jNotes').value};
+  try { const r = await api('journal', {method: 'POST', body: JSON.stringify(body)}); $('jMsg').innerHTML = `<span class="up">Saved ${esc(r.added.symbol)} ${num(r.added.pnl, 2)} USDT</span>`; }
+  catch (e) { $('jMsg').innerHTML = `<span class="down">${esc(e.message)}</span>`; }
+  loadJournal();
+}
+async function loadJournal() {
+  let j; try { j = await api('journal'); } catch (e) { return; }
+  const st = j.stats;
+  $('jStats').innerHTML = st.count ? `<b>${st.count}</b> trades · win rate <b>${num(st.win_rate_pct, 1)}%</b> (${st.wins}/${st.losses}) · net <b class="${cls(st.net_pnl)}">${num(st.net_pnl, 2)}</b> USDT · avg win ${num(st.avg_win, 2)} · avg loss ${num(st.avg_loss, 2)} · profit factor ${st.profit_factor == null ? '—' : num(st.profit_factor, 2)}<br>${esc(st.note)}` : 'No trades yet.';
+  $('jTrades').innerHTML = table([['Closed', r => esc(r.closed_at || '')], ['Coin', r => esc(r.symbol)], ['Side', r => pill(r.side)], ['Lev', r => r.leverage ? num(r.leverage, 0) + 'x' : '—'],
+    ['Pump', r => r.pump_pct == null ? '—' : '+' + num(r.pump_pct, 0) + '%'], ['Entry', r => px(r.entry)], ['Exit', r => px(r.exit)],
+    ['Net P&L', r => `<span class="${cls(r.pnl - r.fee)}">${num(r.pnl - r.fee, 2)}</span>`], ['Setup', r => esc(r.setup || '')], ['Notes', r => esc(r.notes || ''), 1]], j.trades);
+}
 async function manualOpen() {
   const body = {symbol: $('mSym').value, side: $('mSide').value, stop_loss: parseFloat($('mSl').value), take_profit: parseFloat($('mTp').value)};
   const tr = parseFloat($('mTr').value); if (tr > 0) body.trail_pct = tr / 100;
@@ -245,7 +281,7 @@ function spark(points) {
 async function refresh() {
   if (!TOKEN) return;
   let st;
-  loadPumpAgent(); loadCompare(); loadManual();
+  loadPumpAgent(); loadCompare(); loadManual(); loadJournal();
   try { st = await api('status'); } catch (e) { logout(); $('loginErr').textContent = e.message; return; }
   const [pos, sig, ai, sc, ev, eq, stu, com, lab] = await Promise.all([api('positions'), api('signals?limit=80'), api('ai-decisions?limit=30'), api('scans?limit=12'), api('events?limit=40'), api('equity?limit=600'), api('study?limit=40'), api('committee?limit=6'), api('lab')].map(p => p.catch(() => null)));
   const a = st.account;
