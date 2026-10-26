@@ -25,6 +25,7 @@ from .strategy import LONG, SHORT, generate_signal
 from .study import StudyMode
 from .lab import StrategyLab
 from .pump_agent import PumpExhaustionAgent
+from .manual import ManualDesk
 
 log = logging.getLogger("scanner")
 
@@ -42,6 +43,7 @@ class Scanner:
                     if settings.lab_enabled else None)
         self.pump_agent = (PumpExhaustionAgent(settings, self.client, self.reviewer, self._candles_since, store, clock)
                            if settings.pump_agent_enabled else None)
+        self.manual = ManualDesk(settings, self.client, self._candles_since, clock)
         self.study = StudyMode(store, settings.study_min_change, settings.study_min_volume, clock) if settings.study_enabled else None
         self._scan_lock = threading.Lock()
         self._stop = threading.Event()
@@ -217,6 +219,13 @@ class Scanner:
                     errors.append("pump agent: " + "; ".join(pa["errors"])[:300])
             except Exception as exc:
                 errors.append(f"pump agent: {exc}")
+
+        # 7. manual paper desk (user's own ideas, own ledger): exits only
+        try:
+            prices = {k: v["price"] for k, v in by_sym.items() if v["price"] > 0}
+            stats["manual_closed"] = self.manual.manage(prices)
+        except Exception as exc:
+            errors.append(f"manual desk: {exc}")
 
         self.broker.roll_day_and_limits()
         self.broker.record_equity()

@@ -181,6 +181,19 @@ def create_app(settings: Settings | None = None, client=None, start_scheduler: b
         from .pump_backtest import start_background
         return start_background(s, scanner.pump_agent.store)
 
+    @app.get("/api/manual", dependencies=[Depends(auth)])
+    def manual_summary():
+        return scanner.manual.summary()
+
+    @app.post("/api/manual/open", dependencies=[Depends(auth)])
+    def manual_open(symbol: str = Body(...), side: str = Body(...), stop_loss: float = Body(...),
+                    take_profit: float = Body(...), trail_pct: float | None = Body(None), note: str = Body("")):
+        from .risk import RiskRejected
+        try:
+            return {"opened": scanner.manual.open(symbol, side, stop_loss, take_profit, trail_pct, note)}
+        except RiskRejected as exc:
+            raise HTTPException(400, f"rejected by risk engine: {exc}")
+
     compare_store = Store(os.path.join(s.data_dir, "strategy_compare.db"))
 
     @app.get("/api/research/compare", dependencies=[Depends(auth)])
